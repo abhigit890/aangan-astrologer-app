@@ -593,6 +593,18 @@
       snap.forEach(d => {
         const m = d.data();
         const bubble = document.createElement('div');
+        if (m.senderType === 'remedy') {
+          bubble.className = 'bubble from-astro';
+          bubble.style.maxWidth = '85%';
+          bubble.innerHTML = `
+            ${m.remedyPhoto ? `<img src="${m.remedyPhoto}" style="width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:8px; margin-bottom:6px;">` : ''}
+            <div style="font-weight:700; font-size:13.5px;">${m.remedyName || ''}</div>
+            <div style="font-size:11.5px; opacity:0.85; margin:2px 0;">${m.remedyDesc || ''}</div>
+            <div style="font-size:12px; font-weight:600;">${m.remedyPrice || ''}</div>
+          `;
+          body.appendChild(bubble);
+          return;
+        }
         const cls = m.senderType === 'astrologer' ? 'from-astro' : m.senderType === 'system' ? 'from-system' : 'from-user';
         bubble.className = 'bubble ' + cls;
         const time = m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
@@ -600,9 +612,9 @@
         body.appendChild(bubble);
       });
       if (Date.now() - threadOpenedAt < 1200) {
-        window.scrollTo({ top: 0, behavior: 'instant' });
+        body.firstElementChild?.scrollIntoView({ behavior: 'instant', block: 'start' });
       } else {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        body.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }
     });
   }
@@ -670,7 +682,7 @@
     if (!window.currentChatId) return;
     await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
       senderType: 'remedy',
-      remedyId, remedyName: r.name, remedyPrice: r.price, remedyPhoto: r.photo || null,
+      remedyId, remedyName: r.name, remedyDesc: r.desc || '', remedyPrice: r.price, remedyPhoto: r.photo || null,
       senderId: window.currentUid, sentAt: serverTimestamp()
     });
     await setDoc(doc(db, 'chats', window.currentChatId), {
