@@ -124,6 +124,18 @@
   .bubble.from-user{ align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
   .bubble.from-astro{ align-self:flex-end; background:var(--gold); color:#2E1D0C; border-bottom-right-radius:4px; }
   .bubble .ts{ display:block; font-size:10px; opacity:0.6; margin-top:4px; }
+  .thread-input-bar{
+    position:fixed; bottom:0; left:0; right:0; max-width:480px; margin:0 auto;
+    display:flex; gap:8px; padding:10px 14px; background:#15100A; border-top:1px solid var(--line);
+  }
+  .thread-input-bar input{
+    flex:1; padding:12px 14px; border-radius:20px; border:1px solid var(--line);
+    background:rgba(255,255,255,0.05); color:var(--ink); font-size:14px;
+  }
+  .thread-input-bar button{
+    width:44px; height:44px; border-radius:50%; border:none; background:var(--gold);
+    color:#2E1D0C; font-size:18px; cursor:pointer; flex-shrink:0;
+  }
 
   /* scoreboard */
   .score-block{ padding:16px 18px; }
@@ -240,6 +252,10 @@
     <span class="title" id="thread-username">Chat</span>
   </div>
   <div class="thread-body" id="thread-body"></div>
+  <div class="thread-input-bar">
+    <input type="text" id="thread-input" placeholder="Type a message...">
+    <button id="thread-send">➤</button>
+  </div>
 </div>
 
 <!-- CALL LIST SCREEN -->
@@ -283,7 +299,7 @@
     getAuth, signInWithEmailAndPassword, onAuthStateChanged
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
-    getFirestore, doc, setDoc, updateDoc, serverTimestamp, getDoc,
+    getFirestore, doc, setDoc, updateDoc, serverTimestamp, getDoc, addDoc,
     collection, query, where, orderBy, onSnapshot
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
@@ -410,13 +426,14 @@
 
   function openChatThread(chatId, userName) {
     showScreen('screen-chat-thread');
+    window.currentChatId = chatId;
     document.getElementById('thread-username').textContent = userName;
     const body = document.getElementById('thread-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('sentAt', 'asc'));
     onSnapshot(q, (snap) => {
       if (snap.empty) {
-        body.innerHTML = '<div class="empty-state">No messages yet.</div>';
+        body.innerHTML = '<div class="empty-state">No messages yet. Say hello!</div>';
         return;
       }
       body.innerHTML = '';
@@ -428,8 +445,27 @@
         bubble.innerHTML = `${m.text || ''}<span class="ts">${time}</span>`;
         body.appendChild(bubble);
       });
+      body.scrollTop = body.scrollHeight;
     });
   }
+
+  async function sendAstroMessage() {
+    const input = document.getElementById('thread-input');
+    const text = input.value.trim();
+    if (!text || !window.currentChatId) return;
+    input.value = '';
+    await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
+      text, senderType: 'astrologer', senderId: window.currentUid, sentAt: serverTimestamp()
+    });
+    await setDoc(doc(db, 'chats', window.currentChatId), {
+      lastMessage: text, lastMessageAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  document.getElementById('thread-send').addEventListener('click', sendAstroMessage);
+  document.getElementById('thread-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendAstroMessage();
+  });
 
   // ---- Calls tile: list of past calls ----
   document.getElementById('tile-calls').addEventListener('click', () => {
@@ -541,6 +577,7 @@
 
   // ---- Incoming request listener ----
   let currentRequestId = null;
+  let currentRequestData = null;
 
   function startRequestListener(uid) {
     const q = query(
@@ -554,6 +591,7 @@
       const d = snap.docs[0];
       const r = d.data();
       currentRequestId = d.id;
+      currentRequestData = r;
       document.getElementById('req-type').textContent =
         'Incoming ' + (r.type === 'call' ? 'Call' : r.type === 'video' ? 'Video Call' : 'Chat');
       document.getElementById('req-name').textContent = r.userName || 'User';
@@ -566,11 +604,24 @@
     if (!currentRequestId) return;
     stopRing();
     document.getElementById('incoming-overlay').style.display = 'none';
-    await updateDoc(doc(db, 'requests', currentRequestId), {
+    const reqId = currentRequestId;
+    const reqData = currentRequestData;
+    await updateDoc(doc(db, 'requests', reqId), {
       status: 'accepted',
       acceptedAt: serverTimestamp()
     });
+    if (reqData && reqData.type === 'chat') {
+      await setDoc(doc(db, 'chats', reqId), {
+        astrologerId: window.currentUid,
+        userId: reqData.userId || null,
+        userName: reqData.userName || 'User',
+        lastMessage: '',
+        lastMessageAt: serverTimestamp()
+      }, { merge: true });
+      openChatThread(reqId, reqData.userName || 'User');
+    }
     currentRequestId = null;
+    currentRequestData = null;
   });
 
   document.getElementById('req-decline').addEventListener('click', async () => {
@@ -582,6 +633,7 @@
       declinedAt: serverTimestamp()
     });
     currentRequestId = null;
+    currentRequestData = null;
   });
 </script>
 
