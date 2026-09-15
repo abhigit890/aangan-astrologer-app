@@ -394,7 +394,7 @@
     <div class="tile"><div class="icon-circle">🎁</div><div class="tile-label">Offers</div></div>
     <div class="tile"><div class="icon-circle">⭐</div><div class="tile-label">My Reviews</div></div>
     <div class="tile"><div class="icon-circle">⚙️</div><div class="tile-label">Settings</div></div>
-    <div class="tile"><div class="icon-circle">🎧</div><div class="tile-label">Support</div></div>
+    <div class="tile" id="tile-support"><div class="icon-circle">🎧</div><div class="tile-label">Support</div></div>
   </div>
 
   <div class="bottom-nav">
@@ -450,6 +450,19 @@
   <div id="remedy-suggest-list" class="uk-content"></div>
 </div>
 
+<!-- SUPPORT TICKET CHAT -->
+<div class="sub-screen" id="screen-ticket">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title" id="ticket-title" style="flex:1;">Ticket</span>
+  </div>
+  <div class="thread-body" id="ticket-body" style="padding-bottom:90px;"></div>
+  <div class="thread-input-bar">
+    <input type="text" id="ticket-input" placeholder="Describe your issue...">
+    <button id="ticket-send">➤</button>
+  </div>
+</div>
+
 <!-- ACCOUNT SCREEN -->
 <div class="sub-screen" id="screen-account">
   <div class="sub-header">
@@ -475,8 +488,7 @@
   <div class="acct-block">
     <div class="acct-section-title">About</div>
     <p id="acct-about" class="acct-about-text">No about info yet.</p>
-    <div class="acct-lock-note">🔒 This section is set by Aangan admin and can't be edited here.</div>
-    <button id="acct-raise-ticket-btn" class="acct-outline-btn">Request a Change</button>
+    <div class="acct-lock-note">🔒 This section is set by Aangan admin. To request a change, raise a ticket from Support.</div>
   </div>
   <div class="acct-divider"></div>
   <div class="acct-block">
@@ -485,20 +497,6 @@
     <div class="acct-photos-grid" id="acct-photos-grid"></div>
     <button id="acct-save-photos-btn" class="acct-solid-btn">Save Photos</button>
     <div id="acct-photos-msg" class="acct-hint" style="min-height:16px;"></div>
-  </div>
-</div>
-
-<!-- SUPPORT TICKET FORM -->
-<div id="ticket-form-overlay" class="modal-overlay">
-  <div class="modal-box">
-    <h2 class="modal-title">Request a Profile Change</h2>
-    <label class="modal-label">What would you like changed?</label>
-    <textarea id="ticket-message" rows="5" class="modal-textarea" placeholder="e.g. Please update my About section to mention my 10 years of Vedic astrology experience..."></textarea>
-    <div id="ticket-error" class="modal-error"></div>
-    <div class="modal-actions">
-      <button class="modal-btn-ghost" onclick="closeTicketForm()">Cancel</button>
-      <button class="modal-btn-solid" onclick="submitTicket()">Send to Admin</button>
-    </div>
   </div>
 </div>
 
@@ -563,7 +561,7 @@
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
     getFirestore, doc, setDoc, updateDoc, serverTimestamp, getDoc, addDoc,
-    collection, query, where, orderBy, onSnapshot
+    collection, query, where, orderBy, onSnapshot, getDocs, limit, runTransaction
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -998,34 +996,89 @@
     }
   });
 
-  // ---- Support ticket (profile change request) ----
-  document.getElementById('acct-raise-ticket-btn').addEventListener('click', () => {
-    document.getElementById('ticket-message').value = '';
-    document.getElementById('ticket-error').textContent = '';
-    document.getElementById('ticket-form-overlay').classList.add('show');
-  });
+  // ---- Support ticket system ----
+  async function getNextTicketNumber() {
+    const counterRef = doc(db, 'counters', 'supportTickets');
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(counterRef);
+      const next = (snap.exists() ? snap.data().value : 0) + 1;
+      tx.set(counterRef, { value: next }, { merge: true });
+      return next;
+    });
+  }
 
-  window.closeTicketForm = function() {
-    document.getElementById('ticket-form-overlay').classList.remove('show');
-  };
+  document.getElementById('tile-support').addEventListener('click', openOrCreateSupportTicket);
 
-  window.submitTicket = async function() {
-    const message = document.getElementById('ticket-message').value.trim();
-    if (!message) {
-      document.getElementById('ticket-error').textContent = 'Please describe what you\'d like changed.';
+  async function openOrCreateSupportTicket() {
+    const q = query(
+      collection(db, 'supportTickets'),
+      where('raisedByUid', '==', window.currentUid),
+      where('role', '==', 'astrologer'),
+      where('status', '==', 'open'),
+      limit(1)
+    );
+    const existing = await getDocs(q);
+    if (!existing.empty) {
+      const d = existing.docs[0];
+      openTicketChat(d.id, d.data().ticketNumber);
       return;
     }
-    try {
-      await addDoc(collection(db, 'supportTickets'), {
-        astrologerId: window.currentUid,
-        message, status: 'open', createdAt: serverTimestamp()
+    const ticketNumber = await getNextTicketNumber();
+    const nameSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+    const raisedByName = (nameSnap.exists() && nameSnap.data().name) || (nameSnap.exists() && nameSnap.data().email) || 'Astrologer';
+    const newTicket = await addDoc(collection(db, 'supportTickets'), {
+      ticketNumber, role: 'astrologer', raisedByUid: window.currentUid, raisedByName,
+      status: 'open', lastMessage: '', lastMessageAt: serverTimestamp(), createdAt: serverTimestamp()
+    });
+    openTicketChat(newTicket.id, ticketNumber);
+  }
+
+  let ticketMsgUnsub = null;
+
+  function openTicketChat(ticketId, ticketNumber) {
+    showScreen('screen-ticket');
+    window.currentTicketId = ticketId;
+    document.getElementById('ticket-title').textContent = 'Ticket #' + ticketNumber;
+    const body = document.getElementById('ticket-body');
+    body.innerHTML = '<div class="empty-state">Loading...</div>';
+    window.scrollTo(0, 0);
+    if (ticketMsgUnsub) { ticketMsgUnsub(); ticketMsgUnsub = null; }
+    const q = query(collection(db, 'supportTickets', ticketId, 'messages'), orderBy('sentAt', 'asc'));
+    const openedAt = Date.now();
+    ticketMsgUnsub = onSnapshot(q, (snap) => {
+      if (snap.empty) {
+        body.innerHTML = '<div class="empty-state">Describe your issue below to get started.</div>';
+        return;
+      }
+      body.innerHTML = '';
+      snap.forEach(d => {
+        const m = d.data();
+        const bubble = document.createElement('div');
+        const cls = m.senderType === 'astrologer' ? 'from-astro' : m.senderType === 'system' ? 'from-system' : 'from-user';
+        bubble.className = 'bubble ' + cls;
+        const time = m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
+        bubble.innerHTML = cls === 'from-system' ? (m.text || '') : `${m.text || ''}<span class="ts">${time}</span>`;
+        body.appendChild(bubble);
       });
-      closeTicketForm();
-      alert('Your request has been sent to the admin.');
-    } catch (e) {
-      document.getElementById('ticket-error').textContent = 'Error: ' + e.message;
-    }
-  };
+      if (Date.now() - openedAt < 1200) { window.scrollTo(0,0); document.body.scrollTop = 0; document.documentElement.scrollTop = 0; }
+      else { body.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }
+    });
+  }
+
+  async function sendTicketMessage() {
+    const input = document.getElementById('ticket-input');
+    const text = input.value.trim();
+    if (!text || !window.currentTicketId) return;
+    input.value = '';
+    await addDoc(collection(db, 'supportTickets', window.currentTicketId, 'messages'), {
+      text, senderType: 'astrologer', sentAt: serverTimestamp()
+    });
+    await updateDoc(doc(db, 'supportTickets', window.currentTicketId), {
+      lastMessage: text, lastMessageAt: serverTimestamp()
+    });
+  }
+  document.getElementById('ticket-send').addEventListener('click', sendTicketMessage);
+  document.getElementById('ticket-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendTicketMessage(); });
 
   document.getElementById('tt-kundli').addEventListener('click', async () => {
     showScreen('screen-user-kundli');
