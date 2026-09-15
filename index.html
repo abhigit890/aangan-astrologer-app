@@ -668,6 +668,7 @@
     }));
 
     let svg = ukChartCache[cacheKey];
+    let chartError = null;
     if (!svg) {
       try {
         const r = await fetch(`${BACKEND_URL}/api/kundli`, {
@@ -675,25 +676,36 @@
           body: JSON.stringify({ action: 'chart', ...ukBirth, chartId: ukChartId, chartStyle: ukChartStyle })
         });
         const data = await r.json();
-        svg = data.svg;
-        ukChartCache[cacheKey] = svg;
-      } catch (e) { /* ignore */ }
+        if (data.svg) {
+          svg = data.svg;
+          ukChartCache[cacheKey] = svg;
+        } else {
+          chartError = data.error || JSON.stringify(data);
+        }
+      } catch (e) { chartError = e.message; }
     }
     const wrap = document.getElementById('uk-chart-img-wrap');
     if (wrap) {
-      wrap.innerHTML = svg ? `<div class="uk-chart-img">${svg}</div>` : '<div class="empty-state">Chart unavailable.</div>';
+      wrap.innerHTML = svg ? `<div class="uk-chart-img">${svg}</div>` : `<div class="empty-state">Chart unavailable.${chartError ? '<br>' + chartError : ''}</div>`;
     }
 
     const listEl = document.getElementById('uk-planets-list');
     if (listEl) {
-      const planets = Array.isArray(window.ukData.extended) ? window.ukData.extended
-        : (window.ukData.kundli && window.ukData.kundli.planets) || [];
+      const ext = window.ukData.extended;
+      const kundliPlanets = window.ukData.kundli && window.ukData.kundli.planets;
+      const planets = Array.isArray(ext) ? ext : (Array.isArray(kundliPlanets) ? kundliPlanets : []);
+      let debugMsg = '';
+      if (!planets.length) {
+        const extErr = ext && ext.error;
+        const kErr = window.ukData.kundli && window.ukData.kundli.error;
+        debugMsg = extErr || kErr ? `<div class="empty-state">${extErr || kErr}</div>` : '<div class="empty-state">No planet data.</div>';
+      }
       listEl.innerHTML = planets.map(p => `
         <div class="uk-planet-row">
           <span>${p.name || '-'}</span>
           <span>${p.sign || p.zodiac_sign || '-'} ${p.house ? '· House ' + p.house : ''}</span>
         </div>
-      `).join('') || '<div class="empty-state">No planet data.</div>';
+      `).join('') || debugMsg;
     }
   }
 
