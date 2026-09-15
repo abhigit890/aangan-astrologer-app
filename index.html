@@ -302,6 +302,15 @@
   .modal-actions button{ flex:1; padding:11px; border-radius:10px; font-size:13.5px; cursor:pointer; }
   .modal-btn-ghost{ background:transparent; border:1px solid var(--line); color:var(--ink); }
   .modal-btn-solid{ background:var(--gold); border:none; color:#2E1D0C; font-weight:700; }
+  .ticket-row{
+    display:flex; justify-content:space-between; align-items:center; padding:13px 14px;
+    margin-bottom:9px; border-radius:12px; border:1px solid var(--line); background:var(--card); cursor:pointer;
+  }
+  .ticket-row .tno{ font-weight:700; font-size:13.5px; }
+  .ticket-row .tprev{ font-size:11.5px; color:var(--dim); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px; }
+  .ticket-row .tstatus{ font-size:10px; font-weight:700; padding:3px 9px; border-radius:10px; }
+  .ticket-row .tstatus.open{ background:rgba(62,158,92,0.18); color:var(--green); }
+  .ticket-row .tstatus.closed{ background:rgba(196,87,126,0.18); color:#E08AA8; }
   .uk-planet-row{ display:flex; justify-content:space-between; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:6px; font-size:13px; }
   .uk-chart-toggle{ display:flex; gap:8px; margin-bottom:10px; }
   .uk-chart-toggle button{ flex:1; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:12px; cursor:pointer; }
@@ -450,10 +459,20 @@
   <div id="remedy-suggest-list" class="uk-content"></div>
 </div>
 
+<!-- SUPPORT TICKETS LIST -->
+<div class="sub-screen" id="screen-support-list">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">Support Chat</span>
+  </div>
+  <div id="support-tickets-list" style="padding:16px 18px;"></div>
+  <button id="create-new-ticket-btn" style="display:block; width:calc(100% - 36px); margin:10px 18px; padding:13px; border-radius:12px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; cursor:pointer;">+ Create New Chat</button>
+</div>
+
 <!-- SUPPORT TICKET CHAT -->
 <div class="sub-screen" id="screen-ticket">
   <div class="sub-header">
-    <span class="back" data-back="dashboard">←</span>
+    <span class="back" data-back="screen-support-list">←</span>
     <span class="title" id="ticket-title" style="flex:1;">Ticket</span>
   </div>
   <div class="thread-body" id="ticket-body" style="padding-bottom:90px;"></div>
@@ -1007,22 +1026,36 @@
     });
   }
 
-  document.getElementById('tile-support').addEventListener('click', openOrCreateSupportTicket);
+  document.getElementById('tile-support').addEventListener('click', openSupportList);
 
-  async function openOrCreateSupportTicket() {
-    const q = query(
-      collection(db, 'supportTickets'),
-      where('raisedByUid', '==', window.currentUid),
-      where('role', '==', 'astrologer'),
-      where('status', '==', 'open'),
-      limit(1)
-    );
-    const existing = await getDocs(q);
-    if (!existing.empty) {
-      const d = existing.docs[0];
-      openTicketChat(d.id, d.data().ticketNumber);
-      return;
-    }
+  function openSupportList() {
+    showScreen('screen-support-list');
+    const listEl = document.getElementById('support-tickets-list');
+    listEl.innerHTML = '<div class="empty-state">Loading...</div>';
+    const q = query(collection(db, 'supportTickets'), where('raisedByUid', '==', window.currentUid), where('role', '==', 'astrologer'));
+    onSnapshot(q, (snap) => {
+      if (snap.empty) {
+        listEl.innerHTML = '<div class="empty-state">No Ticket Available</div>';
+        return;
+      }
+      const rows = [];
+      snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+      rows.sort((a, b) => (b.ticketNumber || 0) - (a.ticketNumber || 0));
+      listEl.innerHTML = rows.map(t => `
+        <div class="ticket-row" onclick="openTicketChat('${t.id}', ${t.ticketNumber})">
+          <div>
+            <div class="tno">Ticket #${t.ticketNumber}</div>
+            <div class="tprev">${t.lastMessage || 'No messages yet'}</div>
+          </div>
+          <span class="tstatus ${t.status}">${t.status}</span>
+        </div>
+      `).join('');
+    });
+  }
+
+  document.getElementById('create-new-ticket-btn').addEventListener('click', createNewTicket);
+
+  async function createNewTicket() {
     const ticketNumber = await getNextTicketNumber();
     const nameSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
     const raisedByName = (nameSnap.exists() && nameSnap.data().name) || (nameSnap.exists() && nameSnap.data().email) || 'Astrologer';
@@ -1035,7 +1068,7 @@
 
   let ticketMsgUnsub = null;
 
-  function openTicketChat(ticketId, ticketNumber) {
+  window.openTicketChat = function(ticketId, ticketNumber) {
     showScreen('screen-ticket');
     window.currentTicketId = ticketId;
     document.getElementById('ticket-title').textContent = 'Ticket #' + ticketNumber;
@@ -1063,7 +1096,7 @@
       if (Date.now() - openedAt < 1200) { window.scrollTo(0,0); document.body.scrollTop = 0; document.documentElement.scrollTop = 0; }
       else { body.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }
     });
-  }
+  };
 
   async function sendTicketMessage() {
     const input = document.getElementById('ticket-input');
