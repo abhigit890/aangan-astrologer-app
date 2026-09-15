@@ -484,8 +484,9 @@
     document.getElementById('thread-username').textContent = userName;
     const body = document.getElementById('thread-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
+    window.scrollTo({ top: 0, behavior: 'instant' });
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('sentAt', 'asc'));
-    let isFirstThreadRender = true;
+    const threadOpenedAt = Date.now();
     onSnapshot(q, (snap) => {
       if (snap.empty) {
         body.innerHTML = '<div class="empty-state">No messages yet. Say hello!</div>';
@@ -501,9 +502,8 @@
         bubble.innerHTML = cls === 'from-system' ? (m.text || '') : `${m.text || ''}<span class="ts">${time}</span>`;
         body.appendChild(bubble);
       });
-      if (isFirstThreadRender) {
+      if (Date.now() - threadOpenedAt < 1200) {
         window.scrollTo({ top: 0, behavior: 'instant' });
-        isFirstThreadRender = false;
       } else {
         window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
       }
@@ -659,8 +659,8 @@
       el.innerHTML = `
         <div class="uk-row"><span class="uk-label">Name</span><span class="uk-val">${d.self.name || '-'}</span></div>
         <div class="uk-row"><span class="uk-label">Gender</span><span class="uk-val">${d.self.gender || '-'}</span></div>
-        <div class="uk-row"><span class="uk-label">Date of Birth</span><span class="uk-val">${d.self.dob || '-'}</span></div>
-        <div class="uk-row"><span class="uk-label">Time of Birth</span><span class="uk-val">${d.self.tob || '-'}</span></div>
+        <div class="uk-row"><span class="uk-label">Date of Birth</span><span class="uk-val">${d.self.dobDisplay || d.self.dob || '-'}</span></div>
+        <div class="uk-row"><span class="uk-label">Time of Birth</span><span class="uk-val">${d.self.tobDisplay || d.self.tob || '-'}</span></div>
         <div class="uk-row"><span class="uk-label">Place of Birth</span><span class="uk-val">${d.geo.place_name || d.self.pob}</span></div>
         ${bd ? `
           <div class="uk-row"><span class="uk-label">Sunrise</span><span class="uk-val">${bd.sunrise || '-'}</span></div>
