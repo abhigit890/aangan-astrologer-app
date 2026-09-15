@@ -174,6 +174,67 @@
   .uk-tabs{ flex-wrap:nowrap; }
   .uk-raw-group{ margin:6px 0; }
   .uk-raw-title{ font-size:12.5px; font-weight:700; color:var(--gold-hi); margin:12px 0 2px; text-transform:capitalize; }
+
+  /* dasha table — same structure as user app */
+  .dasha-breadcrumb{display:flex; align-items:center; gap:6px; margin-bottom:12px; flex-wrap:wrap;}
+  .dasha-crumb{font-size:12.5px; font-weight:700; color:var(--dim);}
+  .dasha-crumb.active{color:var(--gold-hi);}
+  .dasha-crumb:not(.active){cursor:pointer; text-decoration:underline; text-underline-offset:2px;}
+  .dasha-crumb-sep{color:var(--dim); font-size:12px;}
+  .dasha-table{border-radius:12px; overflow:hidden; border:1.5px solid var(--line);}
+  .dasha-table-head{
+    display:grid; grid-template-columns:1fr 1fr 1fr; background:linear-gradient(160deg, var(--gold-hi), #8B6914);
+    padding:10px 12px; font-size:11px; font-weight:800; color:#241016; text-transform:uppercase; letter-spacing:.03em;
+  }
+  .dasha-table-row{
+    display:grid; grid-template-columns:1fr 1fr 1fr auto; align-items:center;
+    padding:11px 12px; font-size:12px; border-top:1px solid var(--line); background:var(--card);
+  }
+  .dasha-table-row.clickable{cursor:pointer;}
+  .dasha-table-row.dasha-current{background:rgba(217,169,79,.16);}
+  .dt-planet{font-weight:700; color:var(--ink);}
+  .dt-date{color:var(--dim); font-size:11.5px;}
+  .dt-chevron{color:var(--gold-hi); font-size:15px; text-align:right;}
+  .d-now{font-size:9.5px; font-weight:800; color:var(--green); letter-spacing:.03em; margin-left:4px;}
+  .dasha-back-btn{
+    display:block; margin:14px auto 0; padding:8px 20px; border-radius:10px; border:1px solid var(--line);
+    background:var(--card); color:var(--gold-hi); font-size:13px; cursor:pointer;
+  }
+  .ashtak-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:9px;}
+  .ashtak-cell{
+    padding:14px 4px; text-align:center; display:flex; flex-direction:column; gap:3px;
+    background:linear-gradient(160deg, rgba(245,214,127,0.18), rgba(217,169,79,0.06));
+    border:1px solid var(--line); border-radius:12px;
+  }
+  .ashtak-cell .ash-sign{font-size:10.5px; color:var(--dim); font-weight:700;}
+  .ashtak-cell .ash-total{font-family:'Georgia',serif; font-size:18px; color:var(--gold-hi); font-weight:700;}
+  .shadbala-row{
+    padding:14px 16px; margin-bottom:10px; border-radius:12px; border:1px solid var(--line);
+    background:linear-gradient(160deg, rgba(245,214,127,0.18), rgba(217,169,79,0.06));
+  }
+  .sb-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .sb-name{font-weight:700; font-size:14px; color:var(--ink);}
+  .sb-badge{font-size:10px; font-weight:800; padding:3px 10px; border-radius:999px; letter-spacing:.03em;}
+  .sb-badge.sb-strong{background:rgba(62,158,92,0.2); color:var(--green);}
+  .sb-badge.sb-weak{background:rgba(196,87,126,.22); color:#E08AA8;}
+  .sb-bottom{display:flex; justify-content:space-between; font-size:12px; color:var(--dim);}
+  .kp-row{padding:12px 14px; margin-bottom:9px; border-radius:12px; border:1px solid var(--line);
+    background:linear-gradient(160deg, rgba(245,214,127,0.18), rgba(217,169,79,0.06));}
+  .kp-top{display:flex; justify-content:space-between; align-items:center; margin-bottom:9px; padding-bottom:8px; border-bottom:1px solid var(--line);}
+  .kp-name{font-weight:700; font-size:14px; color:var(--ink);}
+  .kp-retro{color:#E08AA8; font-size:12px;}
+  .kp-sign{font-size:12px; color:var(--dim);}
+  .kp-lords{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .kp-lord{display:flex; flex-direction:column;}
+  .kp-lord-label{font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.03em;}
+  .kp-lord-val{font-size:13px; font-weight:700; color:var(--gold-hi);}
+  .bhava-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:11px 14px; margin-bottom:8px; font-size:13px; border-radius:12px; border:1px solid var(--line);
+    background:linear-gradient(160deg, rgba(245,214,127,0.18), rgba(217,169,79,0.06));
+  }
+  .bhava-row .bhava-num{color:var(--dim); font-weight:700;}
+  .bhava-row .bhava-planets{color:var(--ink); font-weight:700; text-align:right;}
   .uk-planet-row{ display:flex; justify-content:space-between; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:6px; font-size:13px; }
   .uk-chart-toggle{ display:flex; gap:8px; margin-bottom:10px; }
   .uk-chart-toggle button{ flex:1; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:12px; cursor:pointer; }
@@ -320,11 +381,7 @@
     <button class="uk-tab" data-tab="shadbala">Shadbala</button>
     <button class="uk-tab" data-tab="planetnature">Planet Nature</button>
     <button class="uk-tab" data-tab="rashireport">Rashi Report</button>
-    <button class="uk-tab" data-tab="kp">KP Planets</button>
-    <button class="uk-tab" data-tab="kphouses">KP Houses</button>
-    <button class="uk-tab" data-tab="kpbirthchart">KP Birth Chart</button>
-    <button class="uk-tab" data-tab="kpsignificators">KP Significators</button>
-    <button class="uk-tab" data-tab="kpplanetsignificators">KP Planet Significators</button>
+    <button class="uk-tab" data-tab="kp">KP Astrology</button>
   </div>
   <div id="uk-content" class="uk-content"></div>
 </div>
@@ -677,18 +734,122 @@
     ashtakvarga: 'ashtakvarga',
     shadbala: 'shadbala',
     planetnature: 'planetnature',
-    rashireport: 'rashireport',
-    kp: 'kp',
-    kphouses: 'kphouses',
-    kpbirthchart: 'kpbirthchart',
-    kpsignificators: 'kpsignificators',
-    kpplanetsignificators: 'kpplanetsignificators'
+    rashireport: 'rashireport'
   };
   const UK_TAB_LABELS = {
     dasha: 'Dasha', ashtakvarga: 'Ashtakvarga', shadbala: 'Shadbala',
-    planetnature: 'Planet Nature', rashireport: 'Rashi Report',
-    kp: 'KP Planets', kphouses: 'KP Houses', kpbirthchart: 'KP Birth Chart',
-    kpsignificators: 'KP Significators', kpplanetsignificators: 'KP Planet Significators'
+    planetnature: 'Planet Nature', rashireport: 'Rashi Report', kp: 'KP Astrology'
+  };
+
+  // ---- Vimshottari Dasha table — same logic/format as the user app ----
+  const VIMSHOTTARI_YEARS = { Ketu:7, Venus:20, Sun:6, Moon:10, Mars:7, Rahu:18, Jupiter:16, Saturn:19, Mercury:17 };
+  const VIMSHOTTARI_ORDER = ["Ketu","Venus","Sun","Moon","Mars","Rahu","Jupiter","Saturn","Mercury"];
+  const PLANET_ABBR = { Sun:"SU", Moon:"MO", Mars:"MA", Mercury:"ME", Jupiter:"JU", Venus:"VE", Saturn:"SA", Rahu:"RA", Ketu:"KE" };
+
+  function parseApiDashaDate(str) {
+    const parts = str.trim().split(/\s+/);
+    const [d, m, y] = parts[0].split("-").map(Number);
+    let hh = 0, mm = 0;
+    if (parts[1]) { const t = parts[1].split(":").map(Number); hh = t[0] || 0; mm = t[1] || 0; }
+    return new Date(y, m - 1, d, hh, mm);
+  }
+
+  function formatApiDashaDate(date) {
+    const d = date.getDate(), m = date.getMonth() + 1, y = date.getFullYear();
+    const hh = date.getHours(), mm = String(date.getMinutes()).padStart(2, "0");
+    return `${d}-${m}-${y}  ${hh}:${mm}`;
+  }
+
+  function formatShortDashaDate(str) {
+    const d = parseApiDashaDate(str);
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${String(d.getDate()).padStart(2,"0")}-${months[d.getMonth()]}-${d.getFullYear()}`;
+  }
+
+  function computeSubDasha(planet, startDate, endDate) {
+    const totalMs = endDate.getTime() - startDate.getTime();
+    const startIdx = VIMSHOTTARI_ORDER.indexOf(planet);
+    if (startIdx === -1) return [];
+    let cursor = startDate;
+    return VIMSHOTTARI_ORDER.map((_, i) => {
+      const p = VIMSHOTTARI_ORDER[(startIdx + i) % 9];
+      const dur = totalMs * (VIMSHOTTARI_YEARS[p] / 120);
+      const s = new Date(cursor.getTime());
+      const e = new Date(cursor.getTime() + dur);
+      cursor = e;
+      return { planet: p, start: formatApiDashaDate(s), end: formatApiDashaDate(e) };
+    });
+  }
+
+  let ukDashaState = { major: null, currentChain: [], path: [] };
+
+  function dashaChainLabel(planet) {
+    const chain = [...ukDashaState.path.map(p => p.planet), planet];
+    return chain.map(p => PLANET_ABBR[p] || p).join("-");
+  }
+
+  function initUkDashaTable(dasha) {
+    if (!dasha || !dasha.major || !dasha.major.dasha_period) return false;
+    ukDashaState = {
+      major: dasha.major.dasha_period,
+      currentChain: [
+        dasha.minor && dasha.minor.planet && dasha.minor.planet.major,
+        dasha.sub_minor && dasha.sub_minor.planet && dasha.sub_minor.planet.minor,
+        dasha.sub_sub_minor && dasha.sub_sub_minor.planet && dasha.sub_sub_minor.planet.sub_minor,
+        dasha.sub_sub_sub_minor && dasha.sub_sub_sub_minor.planet && dasha.sub_sub_sub_minor.planet.sub_sub_minor
+      ],
+      path: []
+    };
+    renderUkDashaTable();
+    return true;
+  }
+
+  function renderUkDashaTable() {
+    const container = document.getElementById('uk-content');
+    if (!container || !ukDashaState.major) return;
+    const levelNames = ["Mahadasha","Antardasha","Pratyantardasha","SookshmaDasha"];
+    const path = ukDashaState.path;
+    const depth = path.length;
+
+    const crumbsHtml = levelNames.slice(0, depth+1).map((lbl,i) => `
+      <span class="dasha-crumb ${i===depth ? 'active':''}" ${i<depth ? `onclick="jumpUkDashaLevel(${i})"` : ''}>${lbl}</span>
+    `).join('<span class="dasha-crumb-sep">›</span>');
+
+    const rows = depth === 0 ? ukDashaState.major : path[depth-1].rows;
+    const canDrill = depth < 3;
+    const onLivePath = ukDashaState.currentChain.slice(0, depth).every((p, i) => path[i] && path[i].planet === p);
+
+    container.innerHTML = `
+      <div class="dasha-breadcrumb">${crumbsHtml}</div>
+      <div class="dasha-table">
+        <div class="dasha-table-head"><span>Planet</span><span>Start</span><span>End</span></div>
+        ${rows.map((r,i) => {
+          const isCurrent = onLivePath && ukDashaState.currentChain[depth] === r.planet;
+          return `
+          <div class="dasha-table-row ${canDrill ? 'clickable':''} ${isCurrent ? 'dasha-current':''}" ${canDrill ? `onclick="drillUkDasha(${i})"` : ''}>
+            <span class="dt-planet">${dashaChainLabel(r.planet)}${isCurrent ? ' <span class="d-now">●</span>' : ''}</span>
+            <span class="dt-date">${formatShortDashaDate(r.start)}</span>
+            <span class="dt-date">${formatShortDashaDate(r.end)}</span>
+            ${canDrill ? '<span class="dt-chevron">›</span>' : ''}
+          </div>
+        `;}).join("")}
+      </div>
+      ${depth > 0 ? `<button class="dasha-back-btn" onclick="jumpUkDashaLevel(${depth-1})">Back</button>` : ''}
+    `;
+  }
+
+  window.drillUkDasha = function(rowIdx) {
+    const depth = ukDashaState.path.length;
+    const rows = depth === 0 ? ukDashaState.major : ukDashaState.path[depth-1].rows;
+    const selected = rows[rowIdx];
+    const subRows = computeSubDasha(selected.planet, parseApiDashaDate(selected.start), parseApiDashaDate(selected.end));
+    ukDashaState.path.push({ planet: selected.planet, rows: subRows });
+    renderUkDashaTable();
+  };
+
+  window.jumpUkDashaLevel = function(levelIdx) {
+    ukDashaState.path = ukDashaState.path.slice(0, levelIdx);
+    renderUkDashaTable();
   };
 
   async function renderUkTab(tabName) {
@@ -718,6 +879,32 @@
       return;
     }
 
+    if (tabName === 'kp') {
+      if (d.kpCombined === undefined) {
+        el.innerHTML = '<div class="empty-state">Loading KP Astrology...</div>';
+        try {
+          const [kpRes, kpHousesRes, kpBirthChartRes, kpSigRes, kpPlanetSigRes] = await Promise.allSettled([
+            fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'kp', ...ukBirth }) }).then(r => r.json()),
+            fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'kphouses', ...ukBirth }) }).then(r => r.json()),
+            fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'kpbirthchart', ...ukBirth }) }).then(r => r.json()),
+            fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'kpsignificators', ...ukBirth }) }).then(r => r.json()),
+            fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'kpplanetsignificators', ...ukBirth }) }).then(r => r.json())
+          ]);
+          d.kpCombined = {
+            kp: kpRes.status === 'fulfilled' ? kpRes.value : null,
+            kpHouses: kpHousesRes.status === 'fulfilled' ? kpHousesRes.value : null,
+            kpBirthChart: kpBirthChartRes.status === 'fulfilled' ? kpBirthChartRes.value : null,
+            kpSignificators: kpSigRes.status === 'fulfilled' ? kpSigRes.value : null,
+            kpPlanetSignificators: kpPlanetSigRes.status === 'fulfilled' ? kpPlanetSigRes.value : null
+          };
+        } catch (e) {
+          d.kpCombined = null;
+        }
+      }
+      renderUkKpCombined(d.kpCombined);
+      return;
+    }
+
     // Generic lazy-loaded raw sections (dasha, ashtakvarga, shadbala, KP, etc.)
     if (UK_TAB_ACTIONS[tabName]) {
       if (d[tabName] === undefined) {
@@ -735,9 +922,50 @@
       const data = d[tabName];
       if (!data || (data.error)) {
         el.innerHTML = `<div class="empty-state">${(data && data.error) || 'Data unavailable.'}</div>`;
-      } else {
-        el.innerHTML = renderGenericData(data);
+        return;
       }
+      if (tabName === 'dasha') {
+        const ok = initUkDashaTable(data);
+        if (!ok) el.innerHTML = renderGenericData(data);
+        return;
+      }
+      if (tabName === 'ashtakvarga' && data.sarvashtak) {
+        el.innerHTML = `
+          <div class="uk-section-title" style="margin-top:0;">Sarvashtakvarga</div>
+          <p style="font-size:11.5px; color:var(--dim); margin:0 0 12px;">Total bindus (strength points) each sign has, out of 56</p>
+          <div class="ashtak-grid">
+            ${Object.entries(data.sarvashtak).map(([sign, total]) => `
+              <div class="ashtak-cell">
+                <span class="ash-sign">${sign.charAt(0).toUpperCase() + sign.slice(1)}</span>
+                <span class="ash-total">${total}</span>
+              </div>
+            `).join("")}
+          </div>
+        `;
+        return;
+      }
+      if (tabName === 'shadbala' && Array.isArray(data) && data.length) {
+        el.innerHTML = `
+          <div class="uk-section-title" style="margin-top:0;">Shadbala (Planetary Strength)</div>
+          <p style="font-size:11.5px; color:var(--dim); margin:0 0 12px;">Six-fold strength — planets need 100% to be considered fully strong</p>
+          <div>
+            ${data.map(p => `
+              <div class="shadbala-row">
+                <div class="sb-top">
+                  <span class="sb-name">${p.name}</span>
+                  <span class="sb-badge ${p.is_strong ? 'sb-strong' : 'sb-weak'}">${p.is_strong ? "Strong" : "Weak"}</span>
+                </div>
+                <div class="sb-bottom">
+                  <span class="sb-rupa">${Number(p.total_shadbala_rupa).toFixed(2)} Rupas</span>
+                  <span class="sb-percent">${Number(p.strength_percent_of_minimum).toFixed(1)}% of minimum</span>
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        `;
+        return;
+      }
+      el.innerHTML = renderGenericData(data);
     }
   }
 
@@ -766,6 +994,103 @@
       }).join('');
     }
     return `<div class="uk-row"><span class="uk-val">${data}</span></div>`;
+  }
+
+  function renderUkKpCombined(data) {
+    const el = document.getElementById('uk-content');
+    if (!data) { el.innerHTML = '<div class="empty-state">KP data unavailable.</div>'; return; }
+    const { kp, kpHouses, kpBirthChart, kpSignificators, kpPlanetSignificators } = data;
+
+    if (!(Array.isArray(kp) && kp.length) && !(Array.isArray(kpHouses) && kpHouses.length)) {
+      el.innerHTML = '<div class="empty-state">KP data unavailable.</div>';
+      return;
+    }
+
+    let html = '';
+
+    if (Array.isArray(kp) && kp.length) {
+      html += `
+        <div class="uk-section-title" style="margin-top:0;">KP Astrology — Planets</div>
+        <p style="font-size:11.5px; color:var(--dim); margin:0 0 12px;">Sign, Star and Sub Lords for each planet</p>
+        <div>
+          ${kp.map(p => `
+            <div class="kp-row">
+              <div class="kp-top">
+                <span class="kp-name">${p.planet_name}${p.is_retro ? ' <span class="kp-retro">℞</span>' : ''}</span>
+                <span class="kp-sign">${p.sign} · House ${p.house}</span>
+              </div>
+              <div class="kp-lords">
+                <div class="kp-lord"><span class="kp-lord-label">Sign Lord</span><span class="kp-lord-val">${p.sign_lord}</span></div>
+                <div class="kp-lord"><span class="kp-lord-label">Star Lord</span><span class="kp-lord-val">${p.nakshatra_lord}</span></div>
+                <div class="kp-lord"><span class="kp-lord-label">Sub Lord</span><span class="kp-lord-val">${p.sub_lord}</span></div>
+                <div class="kp-lord"><span class="kp-lord-label">Sub-Sub</span><span class="kp-lord-val">${p.sub_sub_lord}</span></div>
+              </div>
+            </div>
+          `).join("")}
+        </div>`;
+    }
+
+    if (Array.isArray(kpHouses) && kpHouses.length) {
+      html += `
+        <div class="uk-section-title">House Cusps</div>
+        <div>
+          ${kpHouses.map(h => `
+            <div class="kp-row">
+              <div class="kp-top">
+                <span class="kp-name">House ${h.house_id}</span>
+                <span class="kp-sign">${h.sign}</span>
+              </div>
+              <div class="kp-lords">
+                <div class="kp-lord"><span class="kp-lord-label">Sign Lord</span><span class="kp-lord-val">${h.sign_lord}</span></div>
+                <div class="kp-lord"><span class="kp-lord-label">Star Lord</span><span class="kp-lord-val">${h.nakshatra_lord}</span></div>
+                <div class="kp-lord"><span class="kp-lord-label">Sub Lord</span><span class="kp-lord-val">${h.sub_lord}</span></div>
+                <div class="kp-lord"><span class="kp-lord-label">Sub-Sub</span><span class="kp-lord-val">${h.sub_sub_lord}</span></div>
+              </div>
+            </div>
+          `).join("")}
+        </div>`;
+    }
+
+    if (Array.isArray(kpBirthChart) && kpBirthChart.length) {
+      html += `
+        <div class="uk-section-title">Planets in Each Bhava</div>
+        <div>
+          ${kpBirthChart.map((b,i) => `
+            <div class="bhava-row">
+              <span class="bhava-num">Bhava ${i+1}</span>
+              <span class="bhava-planets">${b.planets && b.planets.length ? b.planets.join(", ") : "—"}</span>
+            </div>
+          `).join("")}
+        </div>`;
+    }
+
+    if (Array.isArray(kpSignificators) && kpSignificators.length) {
+      html += `
+        <div class="uk-section-title">House Significators</div>
+        <div>
+          ${kpSignificators.map(h => `
+            <div class="bhava-row">
+              <span class="bhava-num">House ${h.house_id}</span>
+              <span class="bhava-planets">${h.significators && h.significators.length ? h.significators.join(", ") : "—"}</span>
+            </div>
+          `).join("")}
+        </div>`;
+    }
+
+    if (Array.isArray(kpPlanetSignificators) && kpPlanetSignificators.length) {
+      html += `
+        <div class="uk-section-title">Planet Significators</div>
+        <div>
+          ${kpPlanetSignificators.map(p => `
+            <div class="bhava-row">
+              <span class="bhava-num">${p.planet_name}</span>
+              <span class="bhava-planets">${p.significators && p.significators.length ? "House " + p.significators.join(", ") : "—"}</span>
+            </div>
+          `).join("")}
+        </div>`;
+    }
+
+    el.innerHTML = html;
   }
 
   async function renderUkCharts() {
