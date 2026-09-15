@@ -137,6 +137,32 @@
   .score-bar-fill.bad{ background:#C4577E; }
   .score-item .param-value.good{ color:var(--green); }
   .score-item .param-value.bad{ color:#C4577E; }
+
+  /* incoming request overlay */
+  #incoming-overlay{
+    display:none; position:fixed; inset:0; background:rgba(4,2,1,0.96); z-index:100;
+    flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px;
+  }
+  #incoming-overlay .ring-avatar{
+    width:110px; height:110px; border-radius:50%; background:rgba(217,169,79,0.15);
+    display:flex; align-items:center; justify-content:center; font-size:44px;
+    margin-bottom:20px; animation:pulse 1.2s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(217,169,79,0.5); }
+    70%{ box-shadow:0 0 0 24px rgba(217,169,79,0); }
+    100%{ box-shadow:0 0 0 0 rgba(217,169,79,0); }
+  }
+  #incoming-overlay .req-type{ color:var(--dim); font-size:13px; text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; }
+  #incoming-overlay .req-name{ color:var(--gold-hi); font-size:22px; font-weight:700; margin-bottom:40px; }
+  .req-actions{ display:flex; gap:24px; }
+  .req-btn{
+    width:64px; height:64px; border-radius:50%; border:none; font-size:26px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .req-btn.accept{ background:var(--green); color:#fff; }
+  .req-btn.decline{ background:#C4577E; color:#fff; }
+  .req-btn-label{ font-size:12px; color:var(--dim); margin-top:6px; }
 </style>
 </head>
 <body>
@@ -234,6 +260,23 @@
   <div class="score-block" id="scoreboard-body"></div>
 </div>
 
+<!-- INCOMING REQUEST OVERLAY -->
+<div id="incoming-overlay">
+  <div class="ring-avatar">🧑</div>
+  <div class="req-type" id="req-type">Incoming Chat</div>
+  <div class="req-name" id="req-name">User</div>
+  <div class="req-actions">
+    <div>
+      <button class="req-btn decline" id="req-decline">✕</button>
+      <div class="req-btn-label">Decline</div>
+    </div>
+    <div>
+      <button class="req-btn accept" id="req-accept">✓</button>
+      <div class="req-btn-label">Accept</div>
+    </div>
+  </div>
+</div>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
@@ -290,6 +333,7 @@
       document.getElementById('header-name').textContent = user.email.split('@')[0];
       document.getElementById('header-uid').textContent = 'ID: ' + user.uid.slice(0,8);
       window.currentUid = user.uid;
+      startRequestListener(user.uid);
     } else {
       loginCard.style.display = 'block';
       dashboard.style.display = 'none';
@@ -470,6 +514,75 @@
       body.appendChild(item);
     });
   }
+
+  // ---- Ring sound (Web Audio, no external file needed) ----
+  let ringInterval = null;
+  function startRing() {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    function beep() {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 740;
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    }
+    beep();
+    ringInterval = setInterval(beep, 900);
+    window.__ringCtx = ctx;
+  }
+  function stopRing() {
+    if (ringInterval) { clearInterval(ringInterval); ringInterval = null; }
+    if (window.__ringCtx) { window.__ringCtx.close(); window.__ringCtx = null; }
+  }
+
+  // ---- Incoming request listener ----
+  let currentRequestId = null;
+
+  function startRequestListener(uid) {
+    const q = query(
+      collection(db, 'requests'),
+      where('astrologerId', '==', uid),
+      where('status', '==', 'pending')
+    );
+    onSnapshot(q, (snap) => {
+      if (currentRequestId) return; // already showing one, ignore new ones for now
+      if (snap.empty) return;
+      const d = snap.docs[0];
+      const r = d.data();
+      currentRequestId = d.id;
+      document.getElementById('req-type').textContent =
+        'Incoming ' + (r.type === 'call' ? 'Call' : r.type === 'video' ? 'Video Call' : 'Chat');
+      document.getElementById('req-name').textContent = r.userName || 'User';
+      document.getElementById('incoming-overlay').style.display = 'flex';
+      startRing();
+    });
+  }
+
+  document.getElementById('req-accept').addEventListener('click', async () => {
+    if (!currentRequestId) return;
+    stopRing();
+    document.getElementById('incoming-overlay').style.display = 'none';
+    await updateDoc(doc(db, 'requests', currentRequestId), {
+      status: 'accepted',
+      acceptedAt: serverTimestamp()
+    });
+    currentRequestId = null;
+  });
+
+  document.getElementById('req-decline').addEventListener('click', async () => {
+    if (!currentRequestId) return;
+    stopRing();
+    document.getElementById('incoming-overlay').style.display = 'none';
+    await updateDoc(doc(db, 'requests', currentRequestId), {
+      status: 'declined',
+      declinedAt: serverTimestamp()
+    });
+    currentRequestId = null;
+  });
 </script>
 
 </body>
