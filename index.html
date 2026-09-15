@@ -421,6 +421,11 @@
           </div>`;
         body.appendChild(row);
       });
+    }, () => {
+      body.innerHTML = '<div class="empty-state">No calls yet.</div>';
+    });
+  }
+
   // ---- Scoreboard ----
   document.getElementById('scoreboard-btn').addEventListener('click', () => {
     showScreen('screen-scoreboard');
