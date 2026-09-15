@@ -119,8 +119,8 @@
   .empty-state{ text-align:center; color:var(--dim); padding:60px 20px; font-size:14px; }
 
   /* chat thread bubbles */
-  .thread-body{ padding:16px 14px 90px; display:flex; flex-direction:column; gap:8px; }
-  .bubble{ max-width:75%; padding:10px 14px; border-radius:14px; font-size:14px; line-height:1.4; }
+  .thread-body{ padding:16px 14px 170px; display:flex; flex-direction:column; gap:8px; }
+  .bubble{ max-width:75%; padding:10px 14px; border-radius:14px; font-size:14px; line-height:1.4; white-space:pre-line; }
   .bubble.from-user{ align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
   .bubble.from-astro{ align-self:flex-end; background:var(--gold); color:#2E1D0C; border-bottom-right-radius:4px; }
   .bubble.from-system{ align-self:center; background:rgba(62,158,92,0.15); border:1px solid var(--green); color:var(--green); font-size:12px; font-weight:700; text-align:center; padding:6px 14px; }
@@ -137,6 +137,39 @@
     width:44px; height:44px; border-radius:50%; border:none; background:var(--gold);
     color:#2E1D0C; font-size:18px; cursor:pointer; flex-shrink:0;
   }
+
+  /* chat thread toolbar */
+  .thread-toolbar{
+    position:fixed; left:0; right:0; bottom:64px; max-width:480px; margin:0 auto;
+    display:flex; justify-content:space-around; background:#15100A;
+    border-top:1px solid var(--line); padding:8px 4px;
+  }
+  .tt-btn{
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    font-size:10px; color:var(--dim); cursor:pointer; text-align:center; width:23%;
+  }
+  .tt-icon{ font-size:18px; }
+
+  /* user kundli view */
+  .uk-tabs{
+    display:flex; gap:8px; padding:14px 14px 10px; overflow-x:auto;
+  }
+  .uk-tab{
+    padding:8px 16px; border-radius:20px; border:1px solid var(--line);
+    background:var(--card); color:var(--dim); font-size:13px; font-weight:600;
+    white-space:nowrap; cursor:pointer;
+  }
+  .uk-tab.active{ background:var(--gold); color:#2E1D0C; border-color:var(--gold); }
+  .uk-content{ padding:6px 18px 40px; }
+  .uk-row{ display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid rgba(217,169,79,0.12); font-size:13.5px; }
+  .uk-row .uk-label{ color:var(--dim); }
+  .uk-row .uk-val{ font-weight:600; text-align:right; }
+  .uk-section-title{ font-size:14px; font-weight:700; color:var(--gold-hi); margin:16px 0 6px; }
+  .uk-chart-img{ width:100%; max-width:280px; margin:10px auto; display:block; background:#fff; border-radius:10px; padding:6px; }
+  .uk-planet-row{ display:flex; justify-content:space-between; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:6px; font-size:13px; }
+  .uk-chart-toggle{ display:flex; gap:8px; margin-bottom:10px; }
+  .uk-chart-toggle button{ flex:1; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:12px; cursor:pointer; }
+  .uk-chart-toggle button.active{ background:var(--gold); color:#2E1D0C; border-color:var(--gold); }
 
   /* scoreboard */
   .score-block{ padding:16px 18px; }
@@ -253,10 +286,30 @@
     <span class="title" id="thread-username">Chat</span>
   </div>
   <div class="thread-body" id="thread-body"></div>
+  <div class="thread-toolbar">
+    <div class="tt-btn" id="tt-kundli"><span class="tt-icon">📜</span><span>Kundli</span></div>
+    <div class="tt-btn" id="tt-remedies"><span class="tt-icon">🙏</span><span>Suggest Remedies</span></div>
+    <div class="tt-btn" id="tt-quickreplies"><span class="tt-icon">⚡</span><span>Quick Replies</span></div>
+    <div class="tt-btn" id="tt-history"><span class="tt-icon">🕘</span><span>History</span></div>
+  </div>
   <div class="thread-input-bar">
     <input type="text" id="thread-input" placeholder="Type a message...">
     <button id="thread-send">➤</button>
   </div>
+</div>
+
+<!-- USER KUNDLI VIEW SCREEN -->
+<div class="sub-screen" id="screen-user-kundli">
+  <div class="sub-header">
+    <span class="back" data-back="screen-chat-thread">←</span>
+    <span class="title">Kundli</span>
+  </div>
+  <div class="uk-tabs" id="uk-tabs">
+    <button class="uk-tab active" data-tab="birth">Birth Details</button>
+    <button class="uk-tab" data-tab="charts">Charts</button>
+    <button class="uk-tab" data-tab="dasha">Dasha</button>
+  </div>
+  <div id="uk-content" class="uk-content"></div>
 </div>
 
 <!-- CALL LIST SCREEN -->
@@ -469,6 +522,195 @@
     if (e.key === 'Enter') sendAstroMessage();
   });
 
+  // ---- Chat thread toolbar ----
+  document.getElementById('tt-remedies').addEventListener('click', () => alert('Suggest Remedies — coming soon'));
+  document.getElementById('tt-quickreplies').addEventListener('click', () => alert('Quick Replies — coming soon'));
+  document.getElementById('tt-history').addEventListener('click', () => alert('History — coming soon'));
+
+  // ---- Kundli view (real backend, same as user app) ----
+  const BACKEND_URL = "https://kinnar-top-astro.vercel.app";
+
+  function parseDobDisplay(dobStr) {
+    // expects dd/mm/yyyy
+    const [d, m, y] = (dobStr || '').split('/').map(Number);
+    return { day: d, month: m, year: y };
+  }
+
+  function parseTobDisplay(tobStr) {
+    // expects "hh:mm AM/PM"
+    const match = (tobStr || '').match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!match) return { hour: 0, min: 0 };
+    let h = Number(match[1]);
+    const min = Number(match[2]);
+    const ampm = match[3].toUpperCase();
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return { hour: h, min };
+  }
+
+  let ukBirth = null;
+  let ukChartStyle = 'north';
+  let ukChartId = 'D1';
+  let ukChartCache = {};
+  let ukPlanetsExtended = [];
+
+  document.getElementById('tt-kundli').addEventListener('click', async () => {
+    showScreen('screen-user-kundli');
+    document.getElementById('uk-content').innerHTML = '<div class="empty-state">Loading kundli...</div>';
+    document.querySelectorAll('.uk-tab').forEach((b,i) => b.classList.toggle('active', i===0));
+
+    try {
+      const reqSnap = await getDoc(doc(db, 'requests', window.currentChatId));
+      const reqData = reqSnap.exists() ? reqSnap.data() : null;
+      const s = reqData && reqData.selfDetails;
+      if (!s) {
+        document.getElementById('uk-content').innerHTML = '<div class="empty-state">This user did not fill kundli details.</div>';
+        return;
+      }
+
+      const { day, month, year } = parseDobDisplay(s.dob);
+      const { hour, min } = parseTobDisplay(s.tob);
+
+      const geoRes = await fetch(`${BACKEND_URL}/api/geocode`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ place: s.pob })
+      });
+      const geo = await geoRes.json();
+      if (!geoRes.ok || !geo.lat) throw new Error(geo.error || 'Could not find birth place.');
+
+      const birth = { day, month, year, hour, min, lat: geo.lat, lon: geo.lon, tzone: geo.tzone };
+      ukBirth = birth;
+      ukChartStyle = 'north';
+      ukChartId = 'D1';
+      ukChartCache = {};
+
+      const [kundliRes, extendedRes, dashaRes, birthDetailsRes, chartRes] = await Promise.allSettled([
+        fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'kundli', ...birth }) }).then(r => r.json()),
+        fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'extended', ...birth }) }).then(r => r.json()),
+        fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'dasha', ...birth }) }).then(r => r.json()),
+        fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'birthdetails', ...birth }) }).then(r => r.json()),
+        fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'chart', ...birth, chartId:'D1', chartStyle:'north' }) }).then(r => r.json())
+      ]);
+
+      window.ukData = {
+        self: s,
+        geo,
+        kundli: kundliRes.status === 'fulfilled' ? kundliRes.value : null,
+        extended: extendedRes.status === 'fulfilled' ? extendedRes.value : null,
+        dasha: dashaRes.status === 'fulfilled' ? dashaRes.value : null,
+        birthDetails: birthDetailsRes.status === 'fulfilled' ? birthDetailsRes.value : null
+      };
+      if (chartRes.status === 'fulfilled' && chartRes.value && chartRes.value.svg) {
+        ukChartCache['D1_north'] = chartRes.value.svg;
+      }
+
+      renderUkTab('birth');
+    } catch (err) {
+      document.getElementById('uk-content').innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+    }
+  });
+
+  document.querySelectorAll('.uk-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.uk-tab').forEach(b => b.classList.remove('active'));
+      tab.classList.add('active');
+      renderUkTab(tab.dataset.tab);
+    });
+  });
+
+  function renderUkTab(tabName) {
+    const el = document.getElementById('uk-content');
+    if (!window.ukData) { el.innerHTML = '<div class="empty-state">No data.</div>'; return; }
+    const d = window.ukData;
+
+    if (tabName === 'birth') {
+      const bd = d.birthDetails;
+      el.innerHTML = `
+        <div class="uk-row"><span class="uk-label">Name</span><span class="uk-val">${d.self.name || '-'}</span></div>
+        <div class="uk-row"><span class="uk-label">Gender</span><span class="uk-val">${d.self.gender || '-'}</span></div>
+        <div class="uk-row"><span class="uk-label">Date of Birth</span><span class="uk-val">${d.self.dob || '-'}</span></div>
+        <div class="uk-row"><span class="uk-label">Time of Birth</span><span class="uk-val">${d.self.tob || '-'}</span></div>
+        <div class="uk-row"><span class="uk-label">Place of Birth</span><span class="uk-val">${d.geo.place_name || d.self.pob}</span></div>
+        ${bd ? `
+          <div class="uk-row"><span class="uk-label">Sunrise</span><span class="uk-val">${bd.sunrise || '-'}</span></div>
+          <div class="uk-row"><span class="uk-label">Sunset</span><span class="uk-val">${bd.sunset || '-'}</span></div>
+          <div class="uk-row"><span class="uk-label">Ayanamsha</span><span class="uk-val">${bd.ayanamsha ? Number(bd.ayanamsha).toFixed(2)+'°' : '-'}</span></div>
+        ` : ''}
+      `;
+    } else if (tabName === 'charts') {
+      renderUkCharts();
+    } else if (tabName === 'dasha') {
+      renderUkDasha();
+    }
+  }
+
+  async function renderUkCharts() {
+    const el = document.getElementById('uk-content');
+    const cacheKey = `${ukChartId}_${ukChartStyle}`;
+    el.innerHTML = `
+      <div class="uk-chart-toggle" id="uk-style-toggle">
+        <button class="${ukChartStyle==='north'?'active':''}" data-style="north">North Indian</button>
+        <button class="${ukChartStyle==='south'?'active':''}" data-style="south">South Indian</button>
+      </div>
+      <div class="uk-chart-toggle" id="uk-chart-id-toggle">
+        <button class="${ukChartId==='D1'?'active':''}" data-chart="D1">Rasi (D1)</button>
+        <button class="${ukChartId==='D9'?'active':''}" data-chart="D9">Navamsa (D9)</button>
+      </div>
+      <div id="uk-chart-img-wrap"><div class="empty-state">Loading chart...</div></div>
+      <div class="uk-section-title">Planetary Positions</div>
+      <div id="uk-planets-list"></div>
+    `;
+    document.querySelectorAll('#uk-style-toggle button').forEach(b => b.addEventListener('click', () => {
+      ukChartStyle = b.dataset.style; renderUkCharts();
+    }));
+    document.querySelectorAll('#uk-chart-id-toggle button').forEach(b => b.addEventListener('click', () => {
+      ukChartId = b.dataset.chart; renderUkCharts();
+    }));
+
+    let svg = ukChartCache[cacheKey];
+    if (!svg) {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/kundli`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'chart', ...ukBirth, chartId: ukChartId, chartStyle: ukChartStyle })
+        });
+        const data = await r.json();
+        svg = data.svg;
+        ukChartCache[cacheKey] = svg;
+      } catch (e) { /* ignore */ }
+    }
+    const wrap = document.getElementById('uk-chart-img-wrap');
+    if (wrap) {
+      wrap.innerHTML = svg ? `<div class="uk-chart-img">${svg}</div>` : '<div class="empty-state">Chart unavailable.</div>';
+    }
+
+    const listEl = document.getElementById('uk-planets-list');
+    if (listEl) {
+      const planets = Array.isArray(window.ukData.extended) ? window.ukData.extended
+        : (window.ukData.kundli && window.ukData.kundli.planets) || [];
+      listEl.innerHTML = planets.map(p => `
+        <div class="uk-planet-row">
+          <span>${p.name || '-'}</span>
+          <span>${p.sign || p.zodiac_sign || '-'} ${p.house ? '· House ' + p.house : ''}</span>
+        </div>
+      `).join('') || '<div class="empty-state">No planet data.</div>';
+    }
+  }
+
+  function renderUkDasha() {
+    const el = document.getElementById('uk-content');
+    const dasha = window.ukData.dasha;
+    if (!dasha) { el.innerHTML = '<div class="empty-state">Dasha data unavailable.</div>'; return; }
+    const list = Array.isArray(dasha) ? dasha : Object.values(dasha).filter(v => v && typeof v === 'object');
+    if (!list.length) { el.innerHTML = '<div class="empty-state">Dasha data unavailable.</div>'; return; }
+    el.innerHTML = list.map(lvl => `
+      <div class="uk-row">
+        <span class="uk-label">${lvl.planet || lvl.major || '-'}</span>
+        <span class="uk-val">${lvl.start || '-'} → ${lvl.end || '-'}</span>
+      </div>
+    `).join('');
+  }
+
   // ---- Calls tile: list of past calls ----
   document.getElementById('tile-calls').addEventListener('click', () => {
     showScreen('screen-call-list');
@@ -624,10 +866,10 @@
       // Auto-send the user's kundli details as the first message, if provided
       if (reqData.selfDetails) {
         const s = reqData.selfDetails;
-        let detailsText = `Name: ${s.name || '-'}\nDate of Birth: ${s.dob || '-'}\nBirth Time: ${s.tob || '-'}\nBirth Place: ${s.pob || '-'}`;
+        let detailsText = `Name: ${s.name || '-'}\nGender: ${s.gender || '-'}\nDOB: ${s.dob || '-'}\nTOB: ${s.tob || '-'}\nPOB: ${s.pob || '-'}`;
         if (reqData.partnerDetails) {
           const p = reqData.partnerDetails;
-          detailsText += `\n\nPartner Details\nName: ${p.name || '-'}\nDate of Birth: ${p.dob || '-'}\nBirth Time: ${p.tob || '-'}\nBirth Place: ${p.pob || '-'}`;
+          detailsText += `\n\nPartner Details\nName: ${p.name || '-'}\nGender: ${p.gender || '-'}\nDOB: ${p.dob || '-'}\nTOB: ${p.tob || '-'}\nPOB: ${p.pob || '-'}`;
         }
         await addDoc(collection(db, 'chats', reqId, 'messages'), {
           text: detailsText, senderType: 'user', senderId: reqData.userId || null, sentAt: serverTimestamp()
