@@ -165,7 +165,15 @@
   .uk-row .uk-label{ color:var(--dim); }
   .uk-row .uk-val{ font-weight:600; text-align:right; }
   .uk-section-title{ font-size:14px; font-weight:700; color:var(--gold-hi); margin:16px 0 6px; }
-  .uk-chart-img{ width:100%; max-width:280px; margin:10px auto; display:block; background:#fff; border-radius:10px; padding:6px; }
+  .uk-chart-img{ width:100%; max-width:100%; margin:10px auto; display:block; background:#fff; border-radius:10px; padding:6px; box-sizing:border-box; overflow:hidden; }
+  .uk-chart-img svg{ width:100%; height:auto; display:block; }
+  .uk-chart-select{
+    width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line);
+    background:var(--card); color:var(--ink); font-size:13px; margin-bottom:10px;
+  }
+  .uk-tabs{ flex-wrap:nowrap; }
+  .uk-raw-group{ margin:6px 0; }
+  .uk-raw-title{ font-size:12.5px; font-weight:700; color:var(--gold-hi); margin:12px 0 2px; text-transform:capitalize; }
   .uk-planet-row{ display:flex; justify-content:space-between; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:6px; font-size:13px; }
   .uk-chart-toggle{ display:flex; gap:8px; margin-bottom:10px; }
   .uk-chart-toggle button{ flex:1; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:12px; cursor:pointer; }
@@ -308,6 +316,15 @@
     <button class="uk-tab active" data-tab="birth">Birth Details</button>
     <button class="uk-tab" data-tab="charts">Charts</button>
     <button class="uk-tab" data-tab="dasha">Dasha</button>
+    <button class="uk-tab" data-tab="ashtakvarga">Ashtakvarga</button>
+    <button class="uk-tab" data-tab="shadbala">Shadbala</button>
+    <button class="uk-tab" data-tab="planetnature">Planet Nature</button>
+    <button class="uk-tab" data-tab="rashireport">Rashi Report</button>
+    <button class="uk-tab" data-tab="kp">KP Planets</button>
+    <button class="uk-tab" data-tab="kphouses">KP Houses</button>
+    <button class="uk-tab" data-tab="kpbirthchart">KP Birth Chart</button>
+    <button class="uk-tab" data-tab="kpsignificators">KP Significators</button>
+    <button class="uk-tab" data-tab="kpplanetsignificators">KP Planet Significators</button>
   </div>
   <div id="uk-content" class="uk-content"></div>
 </div>
@@ -576,6 +593,12 @@
   let ukChartId = 'D1';
   let ukChartCache = {};
   let ukPlanetsExtended = [];
+  const UK_DIVISIONAL_CHARTS = {
+    D1:"Rasi (D1)", D9:"Navamsa (D9)", D2:"Hora (D2)", D3:"Drekkana (D3)", D4:"Chaturthamsa (D4)",
+    D5:"Panchamsa (D5)", D7:"Saptamsa (D7)", D8:"Ashtamsa (D8)", D10:"Dashamsa (D10)", D12:"Dwadashamsa (D12)",
+    D16:"Shodashamsa (D16)", D20:"Vishamsa (D20)", D24:"Chaturvimsamsa (D24)", D27:"Bhamsa (D27)",
+    D30:"Trimsamsa (D30)", D40:"Khavedamsa (D40)", D45:"Akshavedamsa (D45)", D60:"Shashtiamsa (D60)"
+  };
 
   document.getElementById('tt-kundli').addEventListener('click', async () => {
     showScreen('screen-user-kundli');
@@ -615,10 +638,10 @@
       ukChartId = 'D1';
       ukChartCache = {};
 
-      const [kundliRes, extendedRes, dashaRes, birthDetailsRes, chartRes] = await Promise.allSettled([
+      // Only fetch the essentials up front; everything else loads lazily per-tab.
+      const [kundliRes, extendedRes, birthDetailsRes, chartRes] = await Promise.allSettled([
         fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'kundli', ...birth }) }).then(r => r.json()),
         fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'extended', ...birth }) }).then(r => r.json()),
-        fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'dasha', ...birth }) }).then(r => r.json()),
         fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'birthdetails', ...birth }) }).then(r => r.json()),
         fetch(`${BACKEND_URL}/api/kundli`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'chart', ...birth, chartId:'D1', chartStyle:'north' }) }).then(r => r.json())
       ]);
@@ -628,7 +651,6 @@
         geo,
         kundli: kundliRes.status === 'fulfilled' ? kundliRes.value : null,
         extended: extendedRes.status === 'fulfilled' ? extendedRes.value : null,
-        dasha: dashaRes.status === 'fulfilled' ? dashaRes.value : null,
         birthDetails: birthDetailsRes.status === 'fulfilled' ? birthDetailsRes.value : null
       };
       if (chartRes.status === 'fulfilled' && chartRes.value && chartRes.value.svg) {
@@ -649,7 +671,27 @@
     });
   });
 
-  function renderUkTab(tabName) {
+  // Sections fetched lazily on first tab open, cached after that.
+  const UK_TAB_ACTIONS = {
+    dasha: 'dasha',
+    ashtakvarga: 'ashtakvarga',
+    shadbala: 'shadbala',
+    planetnature: 'planetnature',
+    rashireport: 'rashireport',
+    kp: 'kp',
+    kphouses: 'kphouses',
+    kpbirthchart: 'kpbirthchart',
+    kpsignificators: 'kpsignificators',
+    kpplanetsignificators: 'kpplanetsignificators'
+  };
+  const UK_TAB_LABELS = {
+    dasha: 'Dasha', ashtakvarga: 'Ashtakvarga', shadbala: 'Shadbala',
+    planetnature: 'Planet Nature', rashireport: 'Rashi Report',
+    kp: 'KP Planets', kphouses: 'KP Houses', kpbirthchart: 'KP Birth Chart',
+    kpsignificators: 'KP Significators', kpplanetsignificators: 'KP Planet Significators'
+  };
+
+  async function renderUkTab(tabName) {
     const el = document.getElementById('uk-content');
     if (!window.ukData) { el.innerHTML = '<div class="empty-state">No data.</div>'; return; }
     const d = window.ukData;
@@ -668,11 +710,62 @@
           <div class="uk-row"><span class="uk-label">Ayanamsha</span><span class="uk-val">${bd.ayanamsha ? Number(bd.ayanamsha).toFixed(2)+'°' : '-'}</span></div>
         ` : ''}
       `;
-    } else if (tabName === 'charts') {
-      renderUkCharts();
-    } else if (tabName === 'dasha') {
-      renderUkDasha();
+      return;
     }
+
+    if (tabName === 'charts') {
+      renderUkCharts();
+      return;
+    }
+
+    // Generic lazy-loaded raw sections (dasha, ashtakvarga, shadbala, KP, etc.)
+    if (UK_TAB_ACTIONS[tabName]) {
+      if (d[tabName] === undefined) {
+        el.innerHTML = `<div class="empty-state">Loading ${UK_TAB_LABELS[tabName]}...</div>`;
+        try {
+          const r = await fetch(`${BACKEND_URL}/api/kundli`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: UK_TAB_ACTIONS[tabName], ...ukBirth })
+          });
+          d[tabName] = await r.json();
+        } catch (e) {
+          d[tabName] = { error: e.message };
+        }
+      }
+      const data = d[tabName];
+      if (!data || (data.error)) {
+        el.innerHTML = `<div class="empty-state">${(data && data.error) || 'Data unavailable.'}</div>`;
+      } else {
+        el.innerHTML = renderGenericData(data);
+      }
+    }
+  }
+
+  // Recursively renders any nested JSON (object/array/primitive) as readable rows,
+  // since different kundli sections come back in different shapes from the API.
+  function renderGenericData(data, depth) {
+    depth = depth || 0;
+    if (data === null || data === undefined || data === '') {
+      return '<span style="color:var(--dim)">-</span>';
+    }
+    if (Array.isArray(data)) {
+      if (!data.length) return '<span style="color:var(--dim)">-</span>';
+      return data.map((item) => {
+        if (item && typeof item === 'object') {
+          return `<div class="uk-raw-group" style="border:1px solid var(--line); border-radius:10px; padding:8px 10px; margin-bottom:8px; background:var(--card);">${renderGenericData(item, depth + 1)}</div>`;
+        }
+        return `<div class="uk-row"><span class="uk-val">${item}</span></div>`;
+      }).join('');
+    }
+    if (typeof data === 'object') {
+      return Object.entries(data).map(([k, v]) => {
+        if (v && typeof v === 'object') {
+          return `<div class="uk-raw-title">${k}</div>${renderGenericData(v, depth + 1)}`;
+        }
+        return `<div class="uk-row"><span class="uk-label">${k}</span><span class="uk-val">${v}</span></div>`;
+      }).join('');
+    }
+    return `<div class="uk-row"><span class="uk-val">${data}</span></div>`;
   }
 
   async function renderUkCharts() {
@@ -683,10 +776,9 @@
         <button class="${ukChartStyle==='north'?'active':''}" data-style="north">North Indian</button>
         <button class="${ukChartStyle==='south'?'active':''}" data-style="south">South Indian</button>
       </div>
-      <div class="uk-chart-toggle" id="uk-chart-id-toggle">
-        <button class="${ukChartId==='D1'?'active':''}" data-chart="D1">Rasi (D1)</button>
-        <button class="${ukChartId==='D9'?'active':''}" data-chart="D9">Navamsa (D9)</button>
-      </div>
+      <select class="uk-chart-select" id="uk-chart-select">
+        ${Object.entries(UK_DIVISIONAL_CHARTS).map(([id,label]) => `<option value="${id}" ${id===ukChartId?'selected':''}>${label}</option>`).join('')}
+      </select>
       <div id="uk-chart-img-wrap"><div class="empty-state">Loading chart...</div></div>
       <div class="uk-section-title">Planetary Positions</div>
       <div id="uk-planets-list"></div>
@@ -694,9 +786,9 @@
     document.querySelectorAll('#uk-style-toggle button').forEach(b => b.addEventListener('click', () => {
       ukChartStyle = b.dataset.style; renderUkCharts();
     }));
-    document.querySelectorAll('#uk-chart-id-toggle button').forEach(b => b.addEventListener('click', () => {
-      ukChartId = b.dataset.chart; renderUkCharts();
-    }));
+    document.getElementById('uk-chart-select').addEventListener('change', (e) => {
+      ukChartId = e.target.value; renderUkCharts();
+    });
 
     let svg = ukChartCache[cacheKey];
     let chartError = null;
@@ -738,41 +830,6 @@
         </div>
       `).join('') || debugMsg;
     }
-  }
-
-  function renderUkDasha() {
-    const el = document.getElementById('uk-content');
-    const dasha = window.ukData.dasha;
-    if (!dasha) { el.innerHTML = '<div class="empty-state">Dasha data unavailable.</div>'; return; }
-    if (dasha.error) { el.innerHTML = `<div class="empty-state">${dasha.error}</div>`; return; }
-
-    // Try common shapes from astrologyapi.com's current_vdasha_all response
-    let list = null;
-    if (Array.isArray(dasha)) {
-      list = dasha;
-    } else if (dasha.major_planet || dasha.planet) {
-      list = [dasha];
-    } else if (typeof dasha === 'object') {
-      list = Object.entries(dasha).map(([key, val]) => {
-        if (val && typeof val === 'object' && !Array.isArray(val)) return { level: key, ...val };
-        return { level: key, value: val };
-      });
-    }
-
-    if (!list || !list.length) {
-      el.innerHTML = '<div class="empty-state">Dasha data unavailable.</div>';
-      return;
-    }
-
-    el.innerHTML = list.map(lvl => {
-      const planetName = lvl.major_planet || lvl.planet || lvl.level || '-';
-      const start = lvl.start || lvl.from || '-';
-      const end = lvl.end || lvl.to || '-';
-      if (start === '-' && end === '-' && lvl.value !== undefined) {
-        return `<div class="uk-row"><span class="uk-label">${planetName}</span><span class="uk-val">${lvl.value}</span></div>`;
-      }
-      return `<div class="uk-row"><span class="uk-label">${planetName}</span><span class="uk-val">${start} → ${end}</span></div>`;
-    }).join('');
   }
 
   // ---- Calls tile: list of past calls ----
