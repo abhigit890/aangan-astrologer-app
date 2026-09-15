@@ -360,7 +360,8 @@
 <div class="sub-screen" id="screen-chat-thread">
   <div class="sub-header">
     <span class="back" data-back="screen-chat-list">←</span>
-    <span class="title" id="thread-username">Chat</span>
+    <span class="title" id="thread-username" style="flex:1;">Chat</span>
+    <span id="end-chat-btn" style="font-size:12px; color:#E08AA8; border:1px solid #E08AA8; border-radius:14px; padding:5px 12px; cursor:pointer;">End Chat</span>
   </div>
   <div class="thread-body" id="thread-body"></div>
   <div class="thread-toolbar">
@@ -576,6 +577,7 @@
   }
 
   let threadMsgUnsub = null;
+  let threadStatusUnsub = null;
 
   function openChatThread(chatId, userName) {
     showScreen('screen-chat-thread');
@@ -585,6 +587,15 @@
     body.innerHTML = '<div class="empty-state">Loading...</div>';
     window.scrollTo({ top: 0, behavior: 'instant' });
     if (threadMsgUnsub) { threadMsgUnsub(); threadMsgUnsub = null; }
+    if (threadStatusUnsub) { threadStatusUnsub(); threadStatusUnsub = null; }
+
+    threadStatusUnsub = onSnapshot(doc(db, 'chats', chatId), (chatSnap) => {
+      const ended = chatSnap.exists() && chatSnap.data().status === 'ended';
+      document.getElementById('thread-input').disabled = ended;
+      document.getElementById('thread-send').disabled = ended;
+      document.getElementById('end-chat-btn').style.display = ended ? 'none' : 'block';
+    });
+
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('sentAt', 'asc'));
     const threadOpenedAt = Date.now();
     threadMsgUnsub = onSnapshot(q, (snap) => {
@@ -636,6 +647,17 @@
       lastMessage: text, lastMessageAt: serverTimestamp()
     }, { merge: true });
   }
+
+  document.getElementById('end-chat-btn').addEventListener('click', async () => {
+    if (!window.currentChatId) return;
+    if (!confirm('End this chat?')) return;
+    await updateDoc(doc(db, 'chats', window.currentChatId), {
+      status: 'ended', endedAt: serverTimestamp()
+    });
+    await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
+      text: 'This chat has been ended', senderType: 'system', sentAt: serverTimestamp()
+    });
+  });
 
   document.getElementById('thread-send').addEventListener('click', sendAstroMessage);
   document.getElementById('thread-input').addEventListener('keydown', (e) => {
