@@ -531,21 +531,38 @@
   const BACKEND_URL = "https://kinnar-top-astro.vercel.app";
 
   function parseDobDisplay(dobStr) {
-    // expects dd/mm/yyyy
-    const [d, m, y] = (dobStr || '').split('/').map(Number);
-    return { day: d, month: m, year: y };
+    dobStr = (dobStr || '').trim();
+    // dd/mm/yyyy (current format)
+    if (dobStr.includes('/')) {
+      const [d, m, y] = dobStr.split('/').map(Number);
+      return { day: d, month: m, year: y };
+    }
+    // yyyy-mm-dd (older format, fallback)
+    if (dobStr.includes('-')) {
+      const [y, m, d] = dobStr.split('-').map(Number);
+      return { day: d, month: m, year: y };
+    }
+    return { day: null, month: null, year: null };
   }
 
   function parseTobDisplay(tobStr) {
-    // expects "hh:mm AM/PM"
-    const match = (tobStr || '').match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if (!match) return { hour: 0, min: 0 };
-    let h = Number(match[1]);
-    const min = Number(match[2]);
-    const ampm = match[3].toUpperCase();
-    if (ampm === 'PM' && h !== 12) h += 12;
-    if (ampm === 'AM' && h === 12) h = 0;
-    return { hour: h, min };
+    tobStr = (tobStr || '').trim();
+    // "hh:mm AM/PM" (current format)
+    const match = tobStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (match) {
+      let h = Number(match[1]);
+      const min = Number(match[2]);
+      const ampm = match[3].toUpperCase();
+      if (ampm === 'PM' && h !== 12) h += 12;
+      if (ampm === 'AM' && h === 12) h = 0;
+      return { hour: h, min };
+    }
+    // "HH:MM" 24-hour (older format, fallback)
+    const plain = tobStr.match(/^(\d+):(\d+)$/);
+    if (plain) {
+      return { hour: Number(plain[1]), min: Number(plain[2]) };
+    }
+    return { hour: null, min: null };
   }
 
   let ukBirth = null;
@@ -570,6 +587,11 @@
 
       const { day, month, year } = parseDobDisplay(s.dob);
       const { hour, min } = parseTobDisplay(s.tob);
+
+      if (!day || !month || !year || hour === null || min === null) {
+        document.getElementById('uk-content').innerHTML = '<div class="empty-state">Could not read this user\'s birth date/time. Ask them to send a new chat request with details filled in the latest app version.</div>';
+        return;
+      }
 
       const geoRes = await fetch(`${BACKEND_URL}/api/geocode`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
