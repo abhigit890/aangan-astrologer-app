@@ -7,51 +7,97 @@
 <style>
   :root{
     --bg:#0C0904; --gold:#D9A94F; --gold-hi:#F5D67F; --ink:#F5EFE2;
-    --card:rgba(255,255,255,0.06); --line:rgba(217,169,79,0.4);
+    --card:rgba(255,255,255,0.06); --card-hi:rgba(255,255,255,0.1); --line:rgba(217,169,79,0.35);
+    --green:#3E9E5C; --dim:#8A7A63;
   }
   *{box-sizing:border-box;}
   body{
     margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
     font-family:system-ui,-apple-system,sans-serif;
-    display:flex; align-items:center; justify-content:center; padding:20px;
   }
-  .card{
-    width:100%; max-width:380px; background:var(--card);
+  /* ---- LOGIN ---- */
+  #login-card{
+    max-width:380px; margin:80px auto; background:var(--card);
     border:1px solid var(--line); border-radius:18px; padding:28px;
   }
-  h1{ color:var(--gold-hi); font-size:22px; text-align:center; margin:0 0 24px; }
-  input{
+  #login-card h1{ color:var(--gold-hi); font-size:22px; text-align:center; margin:0 0 24px; }
+  #login-card input{
     width:100%; padding:14px; margin-bottom:12px; border-radius:10px;
     border:1px solid var(--line); background:rgba(255,255,255,0.05);
     color:var(--ink); font-size:16px;
   }
-  button{
+  #login-card button{
     width:100%; padding:14px; border-radius:10px; border:none;
-    background:var(--gold); color:#2E1D0C; font-weight:700; font-size:16px;
-    cursor:pointer; margin-bottom:10px;
+    background:var(--gold); color:#2E1D0C; font-weight:700; font-size:16px; cursor:pointer;
   }
-  button:disabled{ opacity:0.5; }
   #status-msg{ text-align:center; font-size:13px; color:#999; min-height:18px; margin-top:8px; }
-  #dashboard{ display:none; text-align:center; }
-  #dashboard h2{ color:var(--gold-hi); margin-bottom:6px; }
-  .toggle-wrap{ display:flex; align-items:center; justify-content:center; gap:12px; margin:24px 0; }
-  .toggle{
-    width:60px; height:32px; border-radius:20px; background:#444;
-    position:relative; cursor:pointer; transition:background 0.2s;
+
+  /* ---- DASHBOARD ---- */
+  #dashboard{ display:none; padding-bottom:80px; max-width:480px; margin:0 auto; }
+  .header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 18px; border-bottom:1px solid var(--line);
   }
-  .toggle.on{ background:#3E9E5C; }
-  .toggle::after{
-    content:''; position:absolute; top:3px; left:3px; width:26px; height:26px;
-    border-radius:50%; background:#fff; transition:left 0.2s;
+  .header-left{ display:flex; flex-direction:column; }
+  .header-left .name{ font-weight:700; font-size:17px; color:var(--gold-hi); display:flex; align-items:center; gap:6px; }
+  .header-left .name .dot{ width:8px; height:8px; border-radius:50%; background:var(--dim); }
+  .header-left .name .dot.live{ background:var(--green); }
+  .header-left .uid{ font-size:12px; color:var(--dim); }
+  .header-icons{ display:flex; gap:16px; font-size:20px; }
+  .header-icons span{ position:relative; cursor:pointer; }
+  .badge{
+    position:absolute; top:-6px; right:-8px; background:#C4577E; color:#fff;
+    font-size:10px; border-radius:8px; padding:1px 5px; font-weight:700;
   }
-  .toggle.on::after{ left:31px; }
-  #status-label{ font-weight:600; font-size:15px; }
-  #logout{ background:transparent; border:1px solid var(--line); color:var(--gold-hi); margin-top:20px; }
+
+  /* toggles */
+  .toggles{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; }
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 16px;
+  }
+  .toggle-row .label{ font-size:15px; font-weight:600; }
+  .toggle-row .sub{ font-size:11px; color:var(--dim); }
+  .switch{ width:50px; height:28px; border-radius:16px; background:#444; position:relative; cursor:pointer; transition:background 0.2s; flex-shrink:0; }
+  .switch.on{ background:var(--green); }
+  .switch::after{ content:''; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#fff; transition:left 0.2s; }
+  .switch.on::after{ left:25px; }
+
+  /* grid */
+  .grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:8px 18px 18px;
+  }
+  .tile{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:18px 8px; text-align:center; cursor:pointer; position:relative;
+  }
+  .tile .icon-circle{
+    width:52px; height:52px; border-radius:50%; margin:0 auto 10px; display:flex;
+    align-items:center; justify-content:center; font-size:22px; background:rgba(217,169,79,0.15);
+  }
+  .tile .tile-label{ font-size:13px; font-weight:600; }
+  .tile .count{
+    position:absolute; top:8px; right:8px; background:#C4577E; color:#fff;
+    font-size:10px; border-radius:8px; padding:1px 6px; font-weight:700;
+  }
+
+  /* bottom nav */
+  .bottom-nav{
+    position:fixed; bottom:0; left:0; right:0; background:#15100A; border-top:1px solid var(--line);
+    display:flex; justify-content:space-around; padding:10px 0 14px; max-width:480px; margin:0 auto;
+  }
+  .nav-item{ display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; color:var(--dim); cursor:pointer; position:relative; }
+  .nav-item.active{ color:var(--gold-hi); }
+  .nav-item .icon{ font-size:20px; }
+  .nav-item .count{
+    position:absolute; top:-6px; right:6px; background:#C4577E; color:#fff;
+    font-size:9px; border-radius:8px; padding:0 4px; font-weight:700;
+  }
 </style>
 </head>
 <body>
 
-<div class="card" id="login-card">
+<div id="login-card">
   <h1>Aangan Astrologer Login</h1>
   <input id="email" type="email" placeholder="Email">
   <input id="password" type="password" placeholder="Password">
@@ -59,20 +105,61 @@
   <div id="status-msg"></div>
 </div>
 
-<div class="card" id="dashboard">
-  <h2>Welcome, Astrologer</h2>
-  <p style="color:#999; font-size:13px;" id="uid-display"></p>
-  <div class="toggle-wrap">
-    <div class="toggle" id="online-toggle"></div>
-    <span id="status-label">Offline</span>
+<div id="dashboard">
+  <div class="header">
+    <div class="header-left">
+      <div class="name"><span class="dot" id="header-dot"></span><span id="header-name">Astrologer</span></div>
+      <div class="uid" id="header-uid">ID: —</div>
+    </div>
+    <div class="header-icons">
+      <span>💬<span class="badge">3</span></span>
+      <span>🔔</span>
+      <span>⚙️</span>
+    </div>
   </div>
-  <button id="logout">Logout</button>
+
+  <div class="toggles">
+    <div class="toggle-row">
+      <div><div class="label">Chat</div><div class="sub">Accept chat requests</div></div>
+      <div class="switch" data-field="chatOnline"></div>
+    </div>
+    <div class="toggle-row">
+      <div><div class="label">Call</div><div class="sub">Accept audio calls</div></div>
+      <div class="switch" data-field="callOnline"></div>
+    </div>
+    <div class="toggle-row">
+      <div><div class="label">Video Call</div><div class="sub">Accept video calls</div></div>
+      <div class="switch" data-field="videoOnline"></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="tile"><div class="count">4</div><div class="icon-circle">📋</div><div class="tile-label">Waitlist</div></div>
+    <div class="tile"><div class="icon-circle">🔴</div><div class="tile-label">Go Live</div></div>
+    <div class="tile"><div class="count">6</div><div class="icon-circle">🧑‍💼</div><div class="tile-label">Assistant Chat</div></div>
+    <div class="tile"><div class="icon-circle">🙏</div><div class="tile-label">Suggested Remedies</div></div>
+    <div class="tile"><div class="icon-circle">👥</div><div class="tile-label">My Community</div></div>
+    <div class="tile"><div class="icon-circle">🎁</div><div class="tile-label">Offers</div></div>
+    <div class="tile"><div class="icon-circle">⭐</div><div class="tile-label">My Reviews</div></div>
+    <div class="tile"><div class="icon-circle">👛</div><div class="tile-label">Wallet</div></div>
+    <div class="tile"><div class="icon-circle">⚙️</div><div class="tile-label">Settings</div></div>
+    <div class="tile"><div class="icon-circle">🎧</div><div class="tile-label">Support</div></div>
+    <div class="tile"><div class="icon-circle">👤</div><div class="tile-label">Profile</div></div>
+  </div>
+
+  <div class="bottom-nav">
+    <div class="nav-item active"><div class="icon">🏠</div><div>Home</div></div>
+    <div class="nav-item"><div class="icon">📦</div><div class="count">4</div><div>Orders</div></div>
+    <div class="nav-item"><div class="icon">🔴</div><div>Live</div></div>
+    <div class="nav-item"><div class="icon">👛</div><div>Wallet</div></div>
+    <div class="nav-item"><div class="icon">👤</div><div>Account</div></div>
+  </div>
 </div>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
-    getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+    getAuth, signInWithEmailAndPassword, onAuthStateChanged
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
     getFirestore, doc, setDoc, updateDoc, serverTimestamp
@@ -104,7 +191,9 @@
       const uid = result.user.uid;
       await setDoc(doc(db, 'astrologers', uid), {
         email: result.user.email,
-        online: false,
+        chatOnline: false,
+        callOnline: false,
+        videoOnline: false,
         updatedAt: serverTimestamp()
       }, { merge: true });
       statusMsg.textContent = '';
@@ -113,11 +202,14 @@
     }
   });
 
+  const toggleState = { chatOnline:false, callOnline:false, videoOnline:false };
+
   onAuthStateChanged(auth, (user) => {
     if (user) {
       loginCard.style.display = 'none';
       dashboard.style.display = 'block';
-      document.getElementById('uid-display').textContent = user.email;
+      document.getElementById('header-name').textContent = user.email.split('@')[0];
+      document.getElementById('header-uid').textContent = 'ID: ' + user.uid.slice(0,8);
       window.currentUid = user.uid;
     } else {
       loginCard.style.display = 'block';
@@ -125,21 +217,19 @@
     }
   });
 
-  const toggle = document.getElementById('online-toggle');
-  const label = document.getElementById('status-label');
-  let isOnline = false;
-
-  toggle.addEventListener('click', async () => {
-    isOnline = !isOnline;
-    toggle.classList.toggle('on', isOnline);
-    label.textContent = isOnline ? 'Online' : 'Offline';
-    await updateDoc(doc(db, 'astrologers', window.currentUid), {
-      online: isOnline,
-      updatedAt: serverTimestamp()
+  document.querySelectorAll('.switch').forEach(sw => {
+    sw.addEventListener('click', async () => {
+      const field = sw.dataset.field;
+      toggleState[field] = !toggleState[field];
+      sw.classList.toggle('on', toggleState[field]);
+      const anyOn = Object.values(toggleState).some(v => v);
+      document.getElementById('header-dot').classList.toggle('live', anyOn);
+      await updateDoc(doc(db, 'astrologers', window.currentUid), {
+        [field]: toggleState[field],
+        updatedAt: serverTimestamp()
+      });
     });
   });
-
-  document.getElementById('logout').addEventListener('click', () => signOut(auth));
 </script>
 
 </body>
