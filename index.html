@@ -485,6 +485,7 @@
     const body = document.getElementById('thread-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('sentAt', 'asc'));
+    let isFirstThreadRender = true;
     onSnapshot(q, (snap) => {
       if (snap.empty) {
         body.innerHTML = '<div class="empty-state">No messages yet. Say hello!</div>';
@@ -500,7 +501,12 @@
         bubble.innerHTML = cls === 'from-system' ? (m.text || '') : `${m.text || ''}<span class="ts">${time}</span>`;
         body.appendChild(bubble);
       });
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      if (isFirstThreadRender) {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+        isFirstThreadRender = false;
+      } else {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }
     });
   }
 
@@ -585,8 +591,11 @@
         return;
       }
 
-      const { day, month, year } = parseDobDisplay(s.dob);
-      const { hour, min } = parseTobDisplay(s.tob);
+      const day = s.day || parseDobDisplay(s.dobDisplay || s.dob).day;
+      const month = s.month || parseDobDisplay(s.dobDisplay || s.dob).month;
+      const year = s.year || parseDobDisplay(s.dobDisplay || s.dob).year;
+      const hour = (s.hour !== undefined && s.hour !== null) ? s.hour : parseTobDisplay(s.tobDisplay || s.tob).hour;
+      const min = (s.min !== undefined && s.min !== null) ? s.min : parseTobDisplay(s.tobDisplay || s.tob).min;
 
       if (!day || !month || !year || hour === null || min === null) {
         document.getElementById('uk-content').innerHTML = '<div class="empty-state">Could not read this user\'s birth date/time. Ask them to send a new chat request with details filled in the latest app version.</div>';
@@ -735,14 +744,35 @@
     const el = document.getElementById('uk-content');
     const dasha = window.ukData.dasha;
     if (!dasha) { el.innerHTML = '<div class="empty-state">Dasha data unavailable.</div>'; return; }
-    const list = Array.isArray(dasha) ? dasha : Object.values(dasha).filter(v => v && typeof v === 'object');
-    if (!list.length) { el.innerHTML = '<div class="empty-state">Dasha data unavailable.</div>'; return; }
-    el.innerHTML = list.map(lvl => `
-      <div class="uk-row">
-        <span class="uk-label">${lvl.planet || lvl.major || '-'}</span>
-        <span class="uk-val">${lvl.start || '-'} → ${lvl.end || '-'}</span>
-      </div>
-    `).join('');
+    if (dasha.error) { el.innerHTML = `<div class="empty-state">${dasha.error}</div>`; return; }
+
+    // Try common shapes from astrologyapi.com's current_vdasha_all response
+    let list = null;
+    if (Array.isArray(dasha)) {
+      list = dasha;
+    } else if (dasha.major_planet || dasha.planet) {
+      list = [dasha];
+    } else if (typeof dasha === 'object') {
+      list = Object.entries(dasha).map(([key, val]) => {
+        if (val && typeof val === 'object' && !Array.isArray(val)) return { level: key, ...val };
+        return { level: key, value: val };
+      });
+    }
+
+    if (!list || !list.length) {
+      el.innerHTML = '<div class="empty-state">Dasha data unavailable.</div>';
+      return;
+    }
+
+    el.innerHTML = list.map(lvl => {
+      const planetName = lvl.major_planet || lvl.planet || lvl.level || '-';
+      const start = lvl.start || lvl.from || '-';
+      const end = lvl.end || lvl.to || '-';
+      if (start === '-' && end === '-' && lvl.value !== undefined) {
+        return `<div class="uk-row"><span class="uk-label">${planetName}</span><span class="uk-val">${lvl.value}</span></div>`;
+      }
+      return `<div class="uk-row"><span class="uk-label">${planetName}</span><span class="uk-val">${start} → ${end}</span></div>`;
+    }).join('');
   }
 
   // ---- Calls tile: list of past calls ----
@@ -900,10 +930,14 @@
       // Auto-send the user's kundli details as the first message, if provided
       if (reqData.selfDetails) {
         const s = reqData.selfDetails;
-        let detailsText = `Name: ${s.name || '-'}\nGender: ${s.gender || '-'}\nDOB: ${s.dob || '-'}\nTOB: ${s.tob || '-'}\nPOB: ${s.pob || '-'}`;
+        const sDob = s.dobDisplay || s.dob || '-';
+        const sTob = s.tobDisplay || s.tob || '-';
+        let detailsText = `Name: ${s.name || '-'}\nGender: ${s.gender || '-'}\nDOB: ${sDob}\nTOB: ${sTob}\nPOB: ${s.pob || '-'}`;
         if (reqData.partnerDetails) {
           const p = reqData.partnerDetails;
-          detailsText += `\n\nPartner Details\nName: ${p.name || '-'}\nGender: ${p.gender || '-'}\nDOB: ${p.dob || '-'}\nTOB: ${p.tob || '-'}\nPOB: ${p.pob || '-'}`;
+          const pDob = p.dobDisplay || p.dob || '-';
+          const pTob = p.tobDisplay || p.tob || '-';
+          detailsText += `\n\nPartner Details\nName: ${p.name || '-'}\nGender: ${p.gender || '-'}\nDOB: ${pDob}\nTOB: ${pTob}\nPOB: ${p.pob || '-'}`;
         }
         await addDoc(collection(db, 'chats', reqId, 'messages'), {
           text: detailsText, senderType: 'user', senderId: reqData.userId || null, sentAt: serverTimestamp()
