@@ -243,6 +243,65 @@
   .rsuggest-card .ph-empty{ width:72px; height:40px; border-radius:8px; background:rgba(255,255,255,0.05); flex-shrink:0; }
   .rsuggest-card .name{ font-size:13.5px; font-weight:700; }
   .rsuggest-card .price{ font-size:12px; color:var(--dim); margin-top:2px; }
+
+  /* Account screen */
+  .acct-block{ padding:20px 18px; }
+  .acct-photo-wrap{ display:flex; justify-content:center; margin-bottom:12px; }
+  .acct-photo{ width:96px; height:96px; border-radius:50%; object-fit:cover; border:2px solid var(--gold); }
+  .acct-photo-empty{ display:flex; align-items:center; justify-content:center; font-size:36px; background:rgba(217,169,79,0.12); color:var(--dim); }
+  .acct-name{ text-align:center; font-size:18px; font-weight:700; color:var(--gold-hi); margin-bottom:16px; }
+  .acct-info-row{ display:flex; gap:10px; margin-bottom:10px; }
+  .acct-info-item{ flex:1; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .acct-info-label{ font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.03em; margin-bottom:3px; }
+  .acct-info-val{ font-size:13.5px; font-weight:600; }
+  .acct-divider{ height:1px; background:var(--line); margin:0 18px; }
+  .acct-section-title{ font-size:15px; font-weight:700; color:var(--gold-hi); margin-bottom:10px; }
+  .acct-about-text{ font-size:13.5px; line-height:1.5; color:var(--ink); margin:0 0 10px; }
+  .acct-lock-note{ font-size:11.5px; color:var(--dim); margin-bottom:14px; }
+  .acct-hint{ font-size:11.5px; color:var(--dim); margin:0 0 12px; }
+  .acct-outline-btn{
+    width:100%; padding:11px; border-radius:10px; border:1px solid var(--gold); background:transparent;
+    color:var(--gold-hi); font-weight:600; cursor:pointer; font-size:13.5px;
+  }
+  .acct-solid-btn{
+    width:100%; padding:12px; border-radius:10px; border:none; background:var(--gold);
+    color:#2E1D0C; font-weight:700; cursor:pointer; font-size:14px; margin-top:6px;
+  }
+  .acct-photos-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
+  .acct-photo-slot{
+    aspect-ratio:3/4; border-radius:10px; border:1.5px dashed var(--line); background:var(--card);
+    display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; cursor:pointer;
+  }
+  .acct-photo-slot.filled{ border-style:solid; border-color:var(--gold); }
+  .acct-photo-slot img{ width:100%; height:100%; object-fit:cover; }
+  .acct-photo-slot .plus{ font-size:22px; color:var(--dim); }
+  .acct-photo-slot .req-tag{
+    position:absolute; top:4px; left:4px; font-size:8.5px; font-weight:700; color:#2E1D0C;
+    background:var(--gold); padding:1px 5px; border-radius:6px;
+  }
+  .acct-photo-slot .remove-x{
+    position:absolute; top:4px; right:4px; width:18px; height:18px; border-radius:50%;
+    background:rgba(0,0,0,0.6); color:#fff; font-size:11px; display:flex; align-items:center; justify-content:center;
+  }
+
+  /* Modal (support ticket) */
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(4,2,1,0.88); z-index:80;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-overlay.show{ display:flex; }
+  .modal-box{ background:var(--bg); border:1px solid var(--line); border-radius:16px; padding:22px; max-width:380px; width:100%; }
+  .modal-title{ font-size:16px; color:var(--gold-hi); margin:0 0 14px; font-weight:700; }
+  .modal-label{ font-size:11.5px; color:var(--dim); display:block; margin-bottom:6px; }
+  .modal-textarea{
+    width:100%; padding:12px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,0.05);
+    color:var(--ink); font-family:inherit; font-size:13.5px; resize:vertical; margin-bottom:8px;
+  }
+  .modal-error{ color:#E08AA8; font-size:12px; min-height:14px; margin-bottom:10px; }
+  .modal-actions{ display:flex; gap:10px; }
+  .modal-actions button{ flex:1; padding:11px; border-radius:10px; font-size:13.5px; cursor:pointer; }
+  .modal-btn-ghost{ background:transparent; border:1px solid var(--line); color:var(--ink); }
+  .modal-btn-solid{ background:var(--gold); border:none; color:#2E1D0C; font-weight:700; }
   .uk-planet-row{ display:flex; justify-content:space-between; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:6px; font-size:13px; }
   .uk-chart-toggle{ display:flex; gap:8px; margin-bottom:10px; }
   .uk-chart-toggle button{ flex:1; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:12px; cursor:pointer; }
@@ -339,11 +398,11 @@
   </div>
 
   <div class="bottom-nav">
-    <div class="nav-item active"><div class="icon">🏠</div><div>Home</div></div>
+    <div class="nav-item active" id="nav-home"><div class="icon">🏠</div><div>Home</div></div>
     <div class="nav-item"><div class="icon">📦</div><div class="count">4</div><div>Orders</div></div>
     <div class="nav-item"><div class="icon">🔴</div><div>Live</div></div>
     <div class="nav-item"><div class="icon">👛</div><div>Wallet</div></div>
-    <div class="nav-item"><div class="icon">👤</div><div>Account</div></div>
+    <div class="nav-item" id="nav-account"><div class="icon">👤</div><div>Account</div></div>
   </div>
 </div>
 
@@ -389,6 +448,58 @@
     <button class="uk-tab" data-rcat="rudraksh">Rudraksh</button>
   </div>
   <div id="remedy-suggest-list" class="uk-content"></div>
+</div>
+
+<!-- ACCOUNT SCREEN -->
+<div class="sub-screen" id="screen-account">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">Account</span>
+  </div>
+  <div class="acct-block">
+    <div class="acct-photo-wrap">
+      <img id="acct-photo" class="acct-photo" src="" style="display:none;">
+      <div id="acct-photo-empty" class="acct-photo acct-photo-empty">👤</div>
+    </div>
+    <div id="acct-name" class="acct-name">—</div>
+    <div class="acct-info-row">
+      <div class="acct-info-item"><div class="acct-info-label">Languages</div><div class="acct-info-val" id="acct-languages">—</div></div>
+      <div class="acct-info-item"><div class="acct-info-label">Specialty</div><div class="acct-info-val" id="acct-specialty">—</div></div>
+    </div>
+    <div class="acct-info-row">
+      <div class="acct-info-item"><div class="acct-info-label">Price</div><div class="acct-info-val" id="acct-price">—</div></div>
+      <div class="acct-info-item"><div class="acct-info-label">Experience</div><div class="acct-info-val" id="acct-experience">—</div></div>
+    </div>
+  </div>
+  <div class="acct-divider"></div>
+  <div class="acct-block">
+    <div class="acct-section-title">About</div>
+    <p id="acct-about" class="acct-about-text">No about info yet.</p>
+    <div class="acct-lock-note">🔒 This section is set by Aangan admin and can't be edited here.</div>
+    <button id="acct-raise-ticket-btn" class="acct-outline-btn">Request a Change</button>
+  </div>
+  <div class="acct-divider"></div>
+  <div class="acct-block">
+    <div class="acct-section-title">Photos</div>
+    <p class="acct-hint">Add at least 3 photos to show them on your public profile. Fewer than 3 and none will be shown.</p>
+    <div class="acct-photos-grid" id="acct-photos-grid"></div>
+    <button id="acct-save-photos-btn" class="acct-solid-btn">Save Photos</button>
+    <div id="acct-photos-msg" class="acct-hint" style="min-height:16px;"></div>
+  </div>
+</div>
+
+<!-- SUPPORT TICKET FORM -->
+<div id="ticket-form-overlay" class="modal-overlay">
+  <div class="modal-box">
+    <h2 class="modal-title">Request a Profile Change</h2>
+    <label class="modal-label">What would you like changed?</label>
+    <textarea id="ticket-message" rows="5" class="modal-textarea" placeholder="e.g. Please update my About section to mention my 10 years of Vedic astrology experience..."></textarea>
+    <div id="ticket-error" class="modal-error"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-ghost" onclick="closeTicketForm()">Cancel</button>
+      <button class="modal-btn-solid" onclick="submitTicket()">Send to Admin</button>
+    </div>
+  </div>
 </div>
 
 <!-- USER KUNDLI VIEW SCREEN -->
@@ -622,7 +733,16 @@
         const cls = m.senderType === 'astrologer' ? 'from-astro' : m.senderType === 'system' ? 'from-system' : 'from-user';
         bubble.className = 'bubble ' + cls;
         const time = m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
-        bubble.innerHTML = cls === 'from-system' ? (m.text || '') : `${m.text || ''}<span class="ts">${time}</span>`;
+        let ticks = '';
+        if (m.senderType === 'astrologer') {
+          if (d.metadata.hasPendingWrites) ticks = ' 🕐';
+          else if (m.read) ticks = ' <span style="color:#5FC7F7;">✓✓</span>';
+          else if (m.delivered) ticks = ' <span style="opacity:0.65;">✓✓</span>';
+          else ticks = ' <span style="opacity:0.65;">✓</span>';
+        } else if (m.senderType === 'user' && !m.read) {
+          updateDoc(doc(db, 'chats', chatId, 'messages', d.id), { delivered: true, read: true }).catch(()=>{});
+        }
+        bubble.innerHTML = cls === 'from-system' ? (m.text || '') : `${m.text || ''}<span class="ts">${time}${ticks}</span>`;
         body.appendChild(bubble);
       });
       if (Date.now() - threadOpenedAt < 1200) {
@@ -771,10 +891,146 @@
     D30:"Trimsamsa (D30)", D40:"Khavedamsa (D40)", D45:"Akshavedamsa (D45)", D60:"Shashtiamsa (D60)"
   };
 
+  document.getElementById('nav-home').addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('nav-home').classList.add('active');
+    showScreen('dashboard');
+  });
+
+  document.getElementById('nav-account').addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('nav-account').classList.add('active');
+    openAccountScreen();
+  });
+
+  let acctPhotoSlots = [null, null, null, null, null]; // base64 strings or null
+
+  async function openAccountScreen() {
+    showScreen('screen-account');
+    const snap = await getDoc(doc(db, 'astrologers', window.currentUid));
+    const a = snap.exists() ? snap.data() : {};
+
+    if (a.profilePhoto) {
+      document.getElementById('acct-photo').src = a.profilePhoto;
+      document.getElementById('acct-photo').style.display = 'block';
+      document.getElementById('acct-photo-empty').style.display = 'none';
+    } else {
+      document.getElementById('acct-photo').style.display = 'none';
+      document.getElementById('acct-photo-empty').style.display = 'flex';
+    }
+    document.getElementById('acct-name').textContent = a.name || (a.email ? a.email.split('@')[0] : 'Astrologer');
+    document.getElementById('acct-languages').textContent = a.languages || 'Not set';
+    document.getElementById('acct-specialty').textContent = a.specialty || 'Not set';
+    document.getElementById('acct-price').textContent = a.price ? ('₹' + a.price + '/min') : 'Not set';
+    document.getElementById('acct-experience').textContent = a.experienceYears ? (a.experienceYears + ' yrs') : 'Not set';
+    document.getElementById('acct-about').textContent = a.about || 'No about info yet.';
+
+    acctPhotoSlots = [0,1,2,3,4].map(i => (a.photos && a.photos[i]) || null);
+    renderPhotoSlots();
+  }
+
+  function renderPhotoSlots() {
+    const grid = document.getElementById('acct-photos-grid');
+    grid.innerHTML = acctPhotoSlots.map((photo, i) => `
+      <div class="acct-photo-slot ${photo ? 'filled' : ''}" data-slot="${i}">
+        ${i < 3 ? '<span class="req-tag">Required</span>' : ''}
+        ${photo ? `<img src="${photo}"><span class="remove-x" data-remove="${i}">✕</span>` : '<span class="plus">+</span>'}
+        <input type="file" accept="image/*" data-fileslot="${i}" style="display:none;">
+      </div>
+    `).join('');
+
+    grid.querySelectorAll('.acct-photo-slot').forEach(slotEl => {
+      const i = Number(slotEl.dataset.slot);
+      slotEl.addEventListener('click', (e) => {
+        if (e.target.dataset.remove !== undefined) {
+          acctPhotoSlots[i] = null;
+          renderPhotoSlots();
+          e.stopPropagation();
+          return;
+        }
+        slotEl.querySelector(`input[data-fileslot="${i}"]`).click();
+      });
+    });
+
+    grid.querySelectorAll('input[type=file]').forEach(inp => {
+      inp.addEventListener('change', (e) => {
+        const i = Number(inp.dataset.fileslot);
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            const targetW = 360, targetH = 480; // 3:4 portrait
+            const canvas = document.createElement('canvas');
+            canvas.width = targetW; canvas.height = targetH;
+            const ctx = canvas.getContext('2d');
+            const srcRatio = img.width / img.height;
+            const targetRatio = targetW / targetH;
+            let sx, sy, sw, sh;
+            if (srcRatio > targetRatio) { sh = img.height; sw = sh * targetRatio; sx = (img.width - sw) / 2; sy = 0; }
+            else { sw = img.width; sh = sw / targetRatio; sx = 0; sy = (img.height - sh) / 2; }
+            ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+            acctPhotoSlots[i] = canvas.toDataURL('image/jpeg', 0.75);
+            renderPhotoSlots();
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+  }
+
+  document.getElementById('acct-save-photos-btn').addEventListener('click', async () => {
+    const filled = acctPhotoSlots.filter(p => p);
+    const msgEl = document.getElementById('acct-photos-msg');
+    try {
+      await updateDoc(doc(db, 'astrologers', window.currentUid), {
+        photos: filled, updatedAt: serverTimestamp()
+      });
+      msgEl.textContent = filled.length >= 3
+        ? 'Saved! Your photos are now visible on your public profile.'
+        : `Saved as draft — add ${3 - filled.length} more to show them publicly.`;
+      msgEl.style.color = filled.length >= 3 ? 'var(--green)' : 'var(--dim)';
+    } catch (e) {
+      msgEl.textContent = 'Error: ' + e.message;
+      msgEl.style.color = '#E08AA8';
+    }
+  });
+
+  // ---- Support ticket (profile change request) ----
+  document.getElementById('acct-raise-ticket-btn').addEventListener('click', () => {
+    document.getElementById('ticket-message').value = '';
+    document.getElementById('ticket-error').textContent = '';
+    document.getElementById('ticket-form-overlay').classList.add('show');
+  });
+
+  window.closeTicketForm = function() {
+    document.getElementById('ticket-form-overlay').classList.remove('show');
+  };
+
+  window.submitTicket = async function() {
+    const message = document.getElementById('ticket-message').value.trim();
+    if (!message) {
+      document.getElementById('ticket-error').textContent = 'Please describe what you\'d like changed.';
+      return;
+    }
+    try {
+      await addDoc(collection(db, 'supportTickets'), {
+        astrologerId: window.currentUid,
+        message, status: 'open', createdAt: serverTimestamp()
+      });
+      closeTicketForm();
+      alert('Your request has been sent to the admin.');
+    } catch (e) {
+      document.getElementById('ticket-error').textContent = 'Error: ' + e.message;
+    }
+  };
+
   document.getElementById('tt-kundli').addEventListener('click', async () => {
     showScreen('screen-user-kundli');
     document.getElementById('uk-content').innerHTML = '<div class="empty-state">Loading kundli...</div>';
-    document.querySelectorAll('.uk-tab').forEach((b,i) => b.classList.toggle('active', i===0));
+    document.querySelectorAll('#uk-tabs .uk-tab').forEach((b,i) => b.classList.toggle('active', i===0));
 
     try {
       const reqSnap = await getDoc(doc(db, 'requests', window.currentChatId));
@@ -834,9 +1090,9 @@
     }
   });
 
-  document.querySelectorAll('.uk-tab').forEach(tab => {
+  document.querySelectorAll('#uk-tabs .uk-tab').forEach(tab => {
     tab.addEventListener('click', () => {
-      document.querySelectorAll('.uk-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#uk-tabs .uk-tab').forEach(b => b.classList.remove('active'));
       tab.classList.add('active');
       renderUkTab(tab.dataset.tab);
     });
