@@ -93,6 +93,37 @@
     position:absolute; top:-6px; right:6px; background:#C4577E; color:#fff;
     font-size:9px; border-radius:8px; padding:0 4px; font-weight:700;
   }
+
+  /* sub-screens: chat list, chat thread, call list */
+  .sub-screen{ display:none; max-width:480px; margin:0 auto; min-height:100vh; padding-bottom:20px; }
+  .sub-header{
+    display:flex; align-items:center; gap:14px; padding:16px 18px;
+    border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5;
+  }
+  .sub-header .back{ font-size:20px; cursor:pointer; color:var(--gold-hi); }
+  .sub-header .title{ font-size:17px; font-weight:700; color:var(--gold-hi); }
+
+  .list-item{
+    display:flex; align-items:center; gap:12px; padding:14px 18px;
+    border-bottom:1px solid rgba(217,169,79,0.15); cursor:pointer;
+  }
+  .list-item .avatar{
+    width:44px; height:44px; border-radius:50%; background:rgba(217,169,79,0.18);
+    display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;
+  }
+  .list-item .info{ flex:1; min-width:0; }
+  .list-item .info .row1{ display:flex; justify-content:space-between; }
+  .list-item .info .uname{ font-weight:600; font-size:15px; }
+  .list-item .info .time{ font-size:11px; color:var(--dim); }
+  .list-item .info .preview{ font-size:13px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .empty-state{ text-align:center; color:var(--dim); padding:60px 20px; font-size:14px; }
+
+  /* chat thread bubbles */
+  .thread-body{ padding:16px 14px; display:flex; flex-direction:column; gap:8px; }
+  .bubble{ max-width:75%; padding:10px 14px; border-radius:14px; font-size:14px; line-height:1.4; }
+  .bubble.from-user{ align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
+  .bubble.from-astro{ align-self:flex-end; background:var(--gold); color:#2E1D0C; border-bottom-right-radius:4px; }
+  .bubble .ts{ display:block; font-size:10px; opacity:0.6; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -132,6 +163,8 @@
   </div>
 
   <div class="grid">
+    <div class="tile" id="tile-chats"><div class="icon-circle">💬</div><div class="tile-label">Chats</div></div>
+    <div class="tile" id="tile-calls"><div class="icon-circle">📞</div><div class="tile-label">Calls</div></div>
     <div class="tile"><div class="icon-circle">🙏</div><div class="tile-label">Suggested Remedies</div></div>
     <div class="tile"><div class="icon-circle">🎁</div><div class="tile-label">Offers</div></div>
     <div class="tile"><div class="icon-circle">⭐</div><div class="tile-label">My Reviews</div></div>
@@ -148,13 +181,41 @@
   </div>
 </div>
 
+<!-- CHAT LIST SCREEN -->
+<div class="sub-screen" id="screen-chat-list">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">Chats</span>
+  </div>
+  <div id="chat-list-body"></div>
+</div>
+
+<!-- CHAT THREAD SCREEN -->
+<div class="sub-screen" id="screen-chat-thread">
+  <div class="sub-header">
+    <span class="back" data-back="screen-chat-list">←</span>
+    <span class="title" id="thread-username">Chat</span>
+  </div>
+  <div class="thread-body" id="thread-body"></div>
+</div>
+
+<!-- CALL LIST SCREEN -->
+<div class="sub-screen" id="screen-call-list">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">Calls</span>
+  </div>
+  <div id="call-list-body"></div>
+</div>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
     getAuth, signInWithEmailAndPassword, onAuthStateChanged
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
-    getFirestore, doc, setDoc, updateDoc, serverTimestamp
+    getFirestore, doc, setDoc, updateDoc, serverTimestamp,
+    collection, query, where, orderBy, onSnapshot
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -222,6 +283,122 @@
       });
     });
   });
+
+  // ---- Screen navigation ----
+  function showScreen(id) {
+    document.getElementById('dashboard').style.display = 'none';
+    document.querySelectorAll('.sub-screen').forEach(s => s.style.display = 'none');
+    if (id === 'dashboard') {
+      document.getElementById('dashboard').style.display = 'block';
+    } else {
+      document.getElementById(id).style.display = 'block';
+    }
+  }
+
+  document.querySelectorAll('[data-back]').forEach(el => {
+    el.addEventListener('click', () => showScreen(el.dataset.back));
+  });
+
+  // ---- Chats tile: list of conversations ----
+  document.getElementById('tile-chats').addEventListener('click', () => {
+    showScreen('screen-chat-list');
+    loadChatList();
+  });
+
+  function loadChatList() {
+    const body = document.getElementById('chat-list-body');
+    body.innerHTML = '<div class="empty-state">Loading...</div>';
+    const q = query(
+      collection(db, 'chats'),
+      where('astrologerId', '==', window.currentUid),
+      orderBy('lastMessageAt', 'desc')
+    );
+    onSnapshot(q, (snap) => {
+      if (snap.empty) {
+        body.innerHTML = '<div class="empty-state">No chats yet. Once a user messages you, it will show up here.</div>';
+        return;
+      }
+      body.innerHTML = '';
+      snap.forEach(d => {
+        const c = d.data();
+        const row = document.createElement('div');
+        row.className = 'list-item';
+        const time = c.lastMessageAt?.toDate ? c.lastMessageAt.toDate().toLocaleString('en-IN', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+        row.innerHTML = `
+          <div class="avatar">🧑</div>
+          <div class="info">
+            <div class="row1"><span class="uname">${c.userName || 'User'}</span><span class="time">${time}</span></div>
+            <div class="preview">${c.lastMessage || ''}</div>
+          </div>`;
+        row.addEventListener('click', () => openChatThread(d.id, c.userName || 'User'));
+        body.appendChild(row);
+      });
+    }, () => {
+      body.innerHTML = '<div class="empty-state">No chats yet.</div>';
+    });
+  }
+
+  function openChatThread(chatId, userName) {
+    showScreen('screen-chat-thread');
+    document.getElementById('thread-username').textContent = userName;
+    const body = document.getElementById('thread-body');
+    body.innerHTML = '<div class="empty-state">Loading...</div>';
+    const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('sentAt', 'asc'));
+    onSnapshot(q, (snap) => {
+      if (snap.empty) {
+        body.innerHTML = '<div class="empty-state">No messages yet.</div>';
+        return;
+      }
+      body.innerHTML = '';
+      snap.forEach(d => {
+        const m = d.data();
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble ' + (m.senderType === 'astrologer' ? 'from-astro' : 'from-user');
+        const time = m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
+        bubble.innerHTML = `${m.text || ''}<span class="ts">${time}</span>`;
+        body.appendChild(bubble);
+      });
+    });
+  }
+
+  // ---- Calls tile: list of past calls ----
+  document.getElementById('tile-calls').addEventListener('click', () => {
+    showScreen('screen-call-list');
+    loadCallList();
+  });
+
+  function loadCallList() {
+    const body = document.getElementById('call-list-body');
+    body.innerHTML = '<div class="empty-state">Loading...</div>';
+    const q = query(
+      collection(db, 'calls'),
+      where('astrologerId', '==', window.currentUid),
+      orderBy('calledAt', 'desc')
+    );
+    onSnapshot(q, (snap) => {
+      if (snap.empty) {
+        body.innerHTML = '<div class="empty-state">No calls yet. Once a user calls you, it will show up here.</div>';
+        return;
+      }
+      body.innerHTML = '';
+      snap.forEach(d => {
+        const c = d.data();
+        const row = document.createElement('div');
+        row.className = 'list-item';
+        const time = c.calledAt?.toDate ? c.calledAt.toDate().toLocaleString('en-IN', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+        const dur = c.duration ? Math.round(c.duration/60) + ' min' : '';
+        row.innerHTML = `
+          <div class="avatar">📞</div>
+          <div class="info">
+            <div class="row1"><span class="uname">${c.userName || 'User'}</span><span class="time">${time}</span></div>
+            <div class="preview">${c.type === 'video' ? 'Video call' : 'Audio call'} ${dur ? '· ' + dur : ''}</div>
+          </div>`;
+        body.appendChild(row);
+      });
+    }, () => {
+      body.innerHTML = '<div class="empty-state">No calls yet.</div>';
+    });
+  }
 </script>
 
 </body>
