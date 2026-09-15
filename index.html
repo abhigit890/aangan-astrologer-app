@@ -124,6 +124,19 @@
   .bubble.from-user{ align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
   .bubble.from-astro{ align-self:flex-end; background:var(--gold); color:#2E1D0C; border-bottom-right-radius:4px; }
   .bubble .ts{ display:block; font-size:10px; opacity:0.6; margin-top:4px; }
+
+  /* scoreboard */
+  .score-block{ padding:16px 18px; }
+  .score-item{ margin-bottom:20px; }
+  .score-item .top-row{ display:flex; justify-content:space-between; margin-bottom:6px; }
+  .score-item .param-label{ font-size:14px; font-weight:600; }
+  .score-item .param-value{ font-size:14px; font-weight:700; }
+  .score-bar-bg{ height:10px; border-radius:6px; background:rgba(255,255,255,0.08); overflow:hidden; }
+  .score-bar-fill{ height:100%; border-radius:6px; transition:width 0.3s; }
+  .score-bar-fill.good{ background:var(--green); }
+  .score-bar-fill.bad{ background:#C4577E; }
+  .score-item .param-value.good{ color:var(--green); }
+  .score-item .param-value.bad{ color:#C4577E; }
 </style>
 </head>
 <body>
@@ -159,6 +172,10 @@
     <div class="toggle-row">
       <div><div class="label">Video Call</div><div class="sub">Accept video calls</div></div>
       <div class="switch" data-field="videoOnline"></div>
+    </div>
+    <div class="toggle-row" id="scoreboard-row">
+      <div><div class="label">Your Scoreboard</div><div class="sub">Ratings & performance</div></div>
+      <button id="scoreboard-btn" style="width:auto; padding:8px 18px; margin:0; font-size:13px;">View</button>
     </div>
   </div>
 
@@ -208,13 +225,22 @@
   <div id="call-list-body"></div>
 </div>
 
+<!-- SCOREBOARD SCREEN -->
+<div class="sub-screen" id="screen-scoreboard">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">Your Scoreboard</span>
+  </div>
+  <div class="score-block" id="scoreboard-body"></div>
+</div>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
     getAuth, signInWithEmailAndPassword, onAuthStateChanged
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
-    getFirestore, doc, setDoc, updateDoc, serverTimestamp,
+    getFirestore, doc, setDoc, updateDoc, serverTimestamp, getDoc,
     collection, query, where, orderBy, onSnapshot
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
@@ -395,8 +421,48 @@
           </div>`;
         body.appendChild(row);
       });
-    }, () => {
-      body.innerHTML = '<div class="empty-state">No calls yet.</div>';
+  // ---- Scoreboard ----
+  document.getElementById('scoreboard-btn').addEventListener('click', () => {
+    showScreen('screen-scoreboard');
+    loadScoreboard();
+  });
+
+  async function loadScoreboard() {
+    const body = document.getElementById('scoreboard-body');
+    body.innerHTML = '<div class="empty-state">Loading...</div>';
+
+    // Astrologer's own scores
+    const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+    const a = astroSnap.exists() ? astroSnap.data() : {};
+
+    // Admin-set thresholds (config/scoreThresholds in Firestore)
+    let t = { callRatingThreshold: 70, chatRatingThreshold: 70, loyalUsersThreshold: 50, satisfactionThreshold: 70 };
+    try {
+      const configSnap = await getDoc(doc(db, 'config', 'scoreThresholds'));
+      if (configSnap.exists()) t = { ...t, ...configSnap.data() };
+    } catch (e) { /* use defaults */ }
+
+    const params = [
+      { label: 'Average Call Rating', value: a.avgCallRating || 0, threshold: t.callRatingThreshold },
+      { label: 'Average Chat Rating', value: a.avgChatRating || 0, threshold: t.chatRatingThreshold },
+      { label: 'Loyal Users', value: a.loyalUsersPct || 0, threshold: t.loyalUsersThreshold },
+      { label: 'Customer Satisfaction', value: a.satisfactionRating || 0, threshold: t.satisfactionThreshold },
+    ];
+
+    body.innerHTML = '';
+    params.forEach(p => {
+      const isGood = p.value >= p.threshold;
+      const item = document.createElement('div');
+      item.className = 'score-item';
+      item.innerHTML = `
+        <div class="top-row">
+          <span class="param-label">${p.label}</span>
+          <span class="param-value ${isGood ? 'good' : 'bad'}">${p.value}%</span>
+        </div>
+        <div class="score-bar-bg">
+          <div class="score-bar-fill ${isGood ? 'good' : 'bad'}" style="width:${p.value}%"></div>
+        </div>`;
+      body.appendChild(item);
     });
   }
 </script>
