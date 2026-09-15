@@ -119,10 +119,11 @@
   .empty-state{ text-align:center; color:var(--dim); padding:60px 20px; font-size:14px; }
 
   /* chat thread bubbles */
-  .thread-body{ padding:16px 14px; display:flex; flex-direction:column; gap:8px; }
+  .thread-body{ padding:16px 14px 90px; display:flex; flex-direction:column; gap:8px; }
   .bubble{ max-width:75%; padding:10px 14px; border-radius:14px; font-size:14px; line-height:1.4; }
   .bubble.from-user{ align-self:flex-start; background:var(--card); border:1px solid var(--line); border-bottom-left-radius:4px; }
   .bubble.from-astro{ align-self:flex-end; background:var(--gold); color:#2E1D0C; border-bottom-right-radius:4px; }
+  .bubble.from-system{ align-self:center; background:rgba(62,158,92,0.15); border:1px solid var(--green); color:var(--green); font-size:12px; font-weight:700; text-align:center; padding:6px 14px; }
   .bubble .ts{ display:block; font-size:10px; opacity:0.6; margin-top:4px; }
   .thread-input-bar{
     position:fixed; bottom:0; left:0; right:0; max-width:480px; margin:0 auto;
@@ -440,12 +441,13 @@
       snap.forEach(d => {
         const m = d.data();
         const bubble = document.createElement('div');
-        bubble.className = 'bubble ' + (m.senderType === 'astrologer' ? 'from-astro' : 'from-user');
+        const cls = m.senderType === 'astrologer' ? 'from-astro' : m.senderType === 'system' ? 'from-system' : 'from-user';
+        bubble.className = 'bubble ' + cls;
         const time = m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
-        bubble.innerHTML = `${m.text || ''}<span class="ts">${time}</span>`;
+        bubble.innerHTML = cls === 'from-system' ? (m.text || '') : `${m.text || ''}<span class="ts">${time}</span>`;
         body.appendChild(bubble);
       });
-      body.scrollTop = body.scrollHeight;
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     });
   }
 
@@ -618,6 +620,24 @@
         lastMessage: '',
         lastMessageAt: serverTimestamp()
       }, { merge: true });
+
+      // Auto-send the user's kundli details as the first message, if provided
+      if (reqData.selfDetails) {
+        const s = reqData.selfDetails;
+        let detailsText = `Name: ${s.name || '-'}\nDate of Birth: ${s.dob || '-'}\nBirth Time: ${s.tob || '-'}\nBirth Place: ${s.pob || '-'}`;
+        if (reqData.partnerDetails) {
+          const p = reqData.partnerDetails;
+          detailsText += `\n\nPartner Details\nName: ${p.name || '-'}\nDate of Birth: ${p.dob || '-'}\nBirth Time: ${p.tob || '-'}\nBirth Place: ${p.pob || '-'}`;
+        }
+        await addDoc(collection(db, 'chats', reqId, 'messages'), {
+          text: detailsText, senderType: 'user', senderId: reqData.userId || null, sentAt: serverTimestamp()
+        });
+      }
+      // System message marking the start of the chat
+      await addDoc(collection(db, 'chats', reqId, 'messages'), {
+        text: 'This chat has been started', senderType: 'system', sentAt: serverTimestamp()
+      });
+
       openChatThread(reqId, reqData.userName || 'User');
     }
     currentRequestId = null;
