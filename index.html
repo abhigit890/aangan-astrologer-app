@@ -575,6 +575,8 @@
     });
   }
 
+  let threadMsgUnsub = null;
+
   function openChatThread(chatId, userName) {
     showScreen('screen-chat-thread');
     window.currentChatId = chatId;
@@ -582,9 +584,10 @@
     const body = document.getElementById('thread-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
     window.scrollTo({ top: 0, behavior: 'instant' });
+    if (threadMsgUnsub) { threadMsgUnsub(); threadMsgUnsub = null; }
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('sentAt', 'asc'));
     const threadOpenedAt = Date.now();
-    onSnapshot(q, (snap) => {
+    threadMsgUnsub = onSnapshot(q, (snap) => {
       if (snap.empty) {
         body.innerHTML = '<div class="empty-state">No messages yet. Say hello!</div>';
         return;
@@ -612,7 +615,9 @@
         body.appendChild(bubble);
       });
       if (Date.now() - threadOpenedAt < 1200) {
-        body.firstElementChild?.scrollIntoView({ behavior: 'instant', block: 'start' });
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
       } else {
         body.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }
