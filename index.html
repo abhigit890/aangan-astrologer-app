@@ -109,6 +109,19 @@
   }
   .nav-item{ display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; color:var(--dim); cursor:pointer; position:relative; }
   .nav-item.active{ color:var(--gold-text); }
+  .ongoing-chat-bar{
+    position:fixed; bottom:68px; left:0; right:0; max-width:480px; margin:0 auto; z-index:6;
+    display:flex; align-items:center; gap:8px; padding:9px 16px;
+    background:var(--bg-soft); backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%);
+    border-top:1px solid var(--line);
+  }
+  .ongoing-chat-bar .ocb-dot{ width:8px; height:8px; border-radius:50%; background:var(--green); flex-shrink:0; }
+  .ongoing-chat-bar .ocb-text{ flex:1; font-size:12.5px; color:var(--green); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ongoing-chat-bar .ocb-text b{ color:var(--ink); font-weight:700; }
+  .ongoing-chat-bar .ocb-view{
+    font-size:11.5px; font-weight:700; color:#2E1D0C; background:var(--gold);
+    padding:5px 14px; border-radius:14px; cursor:pointer; flex-shrink:0;
+  }
   .nav-item .icon{ font-size:20px; }
   .nav-item .count{
     position:absolute; top:-6px; right:6px; background:#C4577E; color:#fff;
@@ -436,6 +449,12 @@
     <div class="tile" id="tile-support"><div class="icon-circle">🎧</div><div class="tile-label">Support</div></div>
   </div>
 
+  <div class="ongoing-chat-bar" id="ongoing-chat-bar" style="display:none;">
+    <span class="ocb-dot"></span>
+    <span class="ocb-text">Ongoing Chat — <b id="ocb-username">User</b></span>
+    <span class="ocb-view" id="ocb-view-btn">View</span>
+  </div>
+
   <div class="bottom-nav">
     <div class="nav-item active" id="nav-home"><div class="icon">🏠</div><div>Home</div></div>
     <div class="nav-item"><div class="icon">📦</div><div class="count">4</div><div>Orders</div></div>
@@ -748,10 +767,27 @@
     document.querySelectorAll('.sub-screen').forEach(s => s.style.display = 'none');
     if (id === 'dashboard') {
       document.getElementById('dashboard').style.display = 'block';
+      updateOngoingChatBar();
     } else {
       document.getElementById(id).style.display = 'block';
     }
   }
+
+  function updateOngoingChatBar() {
+    const bar = document.getElementById('ongoing-chat-bar');
+    if (window.currentChatId && window.currentChatUserName) {
+      document.getElementById('ocb-username').textContent = window.currentChatUserName;
+      bar.style.display = 'flex';
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+
+  document.getElementById('ocb-view-btn').addEventListener('click', () => {
+    if (window.currentChatId && window.currentChatUserName) {
+      openChatThread(window.currentChatId, window.currentChatUserName);
+    }
+  });
 
   document.querySelectorAll('[data-back]').forEach(el => {
     el.addEventListener('click', () => showScreen(el.dataset.back));
@@ -802,6 +838,7 @@
   function openChatThread(chatId, userName) {
     showScreen('screen-chat-thread');
     window.currentChatId = chatId;
+    window.currentChatUserName = userName;
     document.getElementById('thread-username').textContent = userName;
     const body = document.getElementById('thread-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
@@ -886,6 +923,8 @@
     await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
       text: 'This chat has been ended', senderType: 'system', sentAt: serverTimestamp()
     });
+    window.currentChatId = null;
+    window.currentChatUserName = null;
   });
 
   document.getElementById('thread-send').addEventListener('click', sendAstroMessage);
@@ -1404,6 +1443,7 @@
       });
     } catch (err) {
       document.getElementById("vc-status").textContent = "Error: " + err.message;
+      alert('Call connection error: ' + err.message);
     }
   };
 
@@ -2255,8 +2295,12 @@
 
       openChatThread(reqId, reqData.userName || 'User');
     } else if (reqData && (reqData.type === 'call' || reqData.type === 'video')) {
-      window.isGeneralCall = true;
-      startRemedyCall(reqId, reqData.type === 'video');
+      try {
+        window.isGeneralCall = true;
+        await startRemedyCall(reqId, reqData.type === 'video');
+      } catch (err) {
+        alert('General call accept error: ' + err.message);
+      }
     }
     currentRequestId = null;
     currentRequestData = null;
