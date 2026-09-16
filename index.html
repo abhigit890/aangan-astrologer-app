@@ -1114,8 +1114,8 @@
               </div>
               <span class="bstatus" style="color:${o.callStatus === 'live' ? 'var(--green)' : 'var(--dim)'};">${statusLabel[o.callStatus] || 'Pending'}</span>
             </div>
-            ${!o.callStatus || o.callStatus === 'pending' ? `<button class="banner-btn sm" style="width:100%; margin-top:12px;" onclick="acceptAndGoLive('${o.id}')">${bannerInner('Accept & Go Live')}</button>` : ''}
-            ${o.callStatus === 'live' && o.assignedAstrologerId === window.currentUid ? `<button class="banner-btn sm" style="width:100%; margin-top:12px;" onclick="joinBookingCall('${o.id}')">${bannerInner('📹 Join Video Call')}</button>` : ''}
+            ${!o.callStatus || o.callStatus === 'pending' ? `<button style="width:100%; margin-top:12px; padding:11px; border-radius:10px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; cursor:pointer;" onclick="acceptAndGoLive('${o.id}')">Accept &amp; Go Live</button>` : ''}
+            ${o.callStatus === 'live' && o.assignedAstrologerId === window.currentUid ? `<button style="width:100%; margin-top:12px; padding:11px; border-radius:10px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; cursor:pointer;" onclick="joinBookingCall('${o.id}')">📹 Join Video Call</button>` : ''}
           </div>
         `).join('');
       } catch (innerErr) {
