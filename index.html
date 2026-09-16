@@ -30,7 +30,7 @@
       linear-gradient(180deg, #FFFDF8 0%, #FBF8F1 55%, #FAF6EE 100%);
   }
   .display{ font-family:'Cinzel',serif; letter-spacing:.02em; }
-  .gold-card, .toggle-row, .tile, .ashtak-cell, .shadbala-row, .kp-row, .bhava-row, .rsuggest-card, .ticket-row, .remedy-row, .kundli-tabs .uk-tab, .astro-card{
+  .gold-card, .toggle-row, .tile, .ashtak-cell, .shadbala-row, .kp-row, .bhava-row, .rsuggest-card, .ticket-row, .remedy-row, .kundli-tabs .uk-tab, .astro-card, .booking-row{
     border:2px solid transparent; border-radius:var(--radius-md);
     background: linear-gradient(160deg, var(--card-hi), var(--card)) padding-box, var(--metal) border-box;
     backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%);
@@ -336,6 +336,10 @@
   .ticket-row .tstatus{ font-size:10px; font-weight:700; padding:3px 9px; border-radius:10px; }
   .ticket-row .tstatus.open{ background:rgba(62,158,92,0.18); color:var(--green); }
   .ticket-row .tstatus.closed{ background:rgba(196,87,126,0.18); color:#E08AA8; }
+  .booking-row{ padding:14px 16px; margin-bottom:12px; border-radius:12px; }
+  .booking-row .bname{ font-size:14px; font-weight:700; }
+  .booking-row .buser{ font-size:11.5px; color:var(--dim); margin-top:3px; }
+  .booking-row .bstatus{ font-size:10.5px; font-weight:700; }
   .uk-planet-row{ display:flex; justify-content:space-between; padding:8px 10px; background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:6px; font-size:13px; }
   .uk-chart-toggle{ display:flex; gap:8px; margin-bottom:10px; }
   .uk-chart-toggle button{ flex:1; padding:8px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:12px; cursor:pointer; }
@@ -382,6 +386,7 @@
 </style>
 </head>
 <body>
+<script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
 
 <div id="login-card">
   <h1>Aangan Astrologer Login</h1>
@@ -424,7 +429,7 @@
   <div class="grid">
     <div class="tile" id="tile-chats"><div class="icon-circle">💬</div><div class="tile-label">Chats</div></div>
     <div class="tile" id="tile-calls"><div class="icon-circle">📞</div><div class="tile-label">Calls</div></div>
-    <div class="tile"><div class="icon-circle">🙏</div><div class="tile-label">Suggested Remedies</div></div>
+    <div class="tile" id="tile-bookings"><div class="icon-circle">🙏</div><div class="tile-label">Remedy Bookings</div></div>
     <div class="tile"><div class="icon-circle">🎁</div><div class="tile-label">Offers</div></div>
     <div class="tile"><div class="icon-circle">⭐</div><div class="tile-label">My Reviews</div></div>
     <div class="tile"><div class="icon-circle">⚙️</div><div class="tile-label">Settings</div></div>
@@ -482,6 +487,27 @@
     <button class="uk-tab" data-rcat="rudraksh">Rudraksh</button>
   </div>
   <div id="remedy-suggest-list" class="uk-content"></div>
+</div>
+
+<!-- REMEDY BOOKINGS -->
+<div class="sub-screen" id="screen-bookings">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">Remedy Bookings</span>
+  </div>
+  <div id="bookings-list" style="padding:16px 18px;"></div>
+</div>
+
+<!-- VIDEO CALL -->
+<div class="sub-screen" id="screen-videocall" style="background:#0C0904;">
+  <div id="vc-remote-container" style="position:fixed; inset:0; background:#0C0904;"></div>
+  <div id="vc-local-container" style="position:fixed; bottom:100px; right:16px; width:110px; height:150px; border-radius:12px; overflow:hidden; border:2px solid var(--gold); z-index:10; background:#000;"></div>
+  <div id="vc-status" style="position:fixed; top:20px; left:0; right:0; text-align:center; color:#F5EFE2; font-size:13px; z-index:10;">Connecting...</div>
+  <div style="position:fixed; bottom:24px; left:0; right:0; display:flex; justify-content:center; gap:18px; z-index:10;">
+    <button id="vc-toggle-mic" style="width:52px; height:52px; border-radius:50%; border:none; background:rgba(255,255,255,0.15); color:#fff; font-size:20px; cursor:pointer;">🎤</button>
+    <button id="vc-leave" style="width:60px; height:60px; border-radius:50%; border:none; background:#C4577E; color:#fff; font-size:22px; cursor:pointer;">📞</button>
+    <button id="vc-toggle-cam" style="width:52px; height:52px; border-radius:50%; border:none; background:rgba(255,255,255,0.15); color:#fff; font-size:20px; cursor:pointer;">📷</button>
+  </div>
 </div>
 
 <!-- SUPPORT TICKETS LIST -->
@@ -598,6 +624,7 @@
   </div>
 </div>
 
+<script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
@@ -1050,6 +1077,119 @@
       return next;
     });
   }
+
+  // ---- Remedy Bookings + Video Call ----
+  document.getElementById('tile-bookings').addEventListener('click', openBookingsList);
+
+  function openBookingsList() {
+    showScreen('screen-bookings');
+    const listEl = document.getElementById('bookings-list');
+    listEl.innerHTML = '<div class="empty-state">Loading...</div>';
+    onSnapshot(collection(db, 'remedyOrders'), (snap) => {
+      if (snap.empty) {
+        listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
+        return;
+      }
+      const rows = [];
+      snap.forEach(d => {
+        const o = d.data();
+        // Show unassigned bookings, or ones assigned to this astrologer
+        if (!o.assignedAstrologerId || o.assignedAstrologerId === window.currentUid) {
+          rows.push({ id: d.id, ...o });
+        }
+      });
+      if (!rows.length) {
+        listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
+        return;
+      }
+      const statusLabel = { pending: 'Pending', assigned: 'Assigned to you', live: 'Live Now', completed: 'Completed' };
+      listEl.innerHTML = rows.map(o => `
+        <div class="booking-row">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <div class="bname">${o.remedyName || 'Remedy'}</div>
+              <div class="buser">${o.userName || 'User'}</div>
+            </div>
+            <span class="bstatus" style="color:${o.callStatus === 'live' ? 'var(--green)' : 'var(--dim)'};">${statusLabel[o.callStatus] || 'Pending'}</span>
+          </div>
+          ${!o.callStatus || o.callStatus === 'pending' ? `<button class="banner-btn sm" style="width:100%; margin-top:12px;" onclick="acceptAndGoLive('${o.id}')">${bannerInner('Accept & Go Live')}</button>` : ''}
+          ${o.callStatus === 'live' && o.assignedAstrologerId === window.currentUid ? `<button class="banner-btn sm" style="width:100%; margin-top:12px;" onclick="joinBookingCall('${o.id}')">${bannerInner('📹 Join Video Call')}</button>` : ''}
+        </div>
+      `).join('');
+    });
+  }
+
+  window.acceptAndGoLive = async function(orderId) {
+    const nameSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+    const myName = (nameSnap.exists() && nameSnap.data().name) || (nameSnap.exists() && nameSnap.data().email) || 'Astrologer';
+    await updateDoc(doc(db, 'remedyOrders', orderId), {
+      assignedAstrologerId: window.currentUid, assignedAstrologerName: myName,
+      callStatus: 'live', updatedAt: serverTimestamp()
+    });
+    joinBookingCall(orderId);
+  };
+
+  const AGORA_BACKEND_URL = "https://kinnar-top-astro.vercel.app";
+  let agoraClient = null;
+  let localAudioTrack = null;
+  let localVideoTrack = null;
+  let micOn = true;
+  let camOn = true;
+
+  window.joinBookingCall = async function(orderId) {
+    showScreen('screen-videocall');
+    document.getElementById('vc-status').textContent = 'Connecting...';
+
+    try {
+      const tokenRes = await fetch(`${AGORA_BACKEND_URL}/api/agora-token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelName: orderId, uid: 0 })
+      });
+      const tokenData = await tokenRes.json();
+      if (!tokenRes.ok) throw new Error(tokenData.error || 'Could not get call token');
+
+      agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+
+      agoraClient.on("user-published", async (user, mediaType) => {
+        await agoraClient.subscribe(user, mediaType);
+        document.getElementById("vc-status").textContent = "Connected";
+        if (mediaType === "video") user.videoTrack.play("vc-remote-container");
+        if (mediaType === "audio") user.audioTrack.play();
+      });
+      agoraClient.on("user-unpublished", () => {
+        document.getElementById("vc-status").textContent = "User left the call";
+      });
+
+      await agoraClient.join(tokenData.appId, orderId, tokenData.token, tokenData.uid || null);
+
+      [localAudioTrack, localVideoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks();
+      localVideoTrack.play("vc-local-container");
+      await agoraClient.publish([localAudioTrack, localVideoTrack]);
+
+      document.getElementById("vc-status").textContent = "Waiting for user to join...";
+    } catch (err) {
+      document.getElementById("vc-status").textContent = "Error: " + err.message;
+    }
+  };
+
+  document.getElementById('vc-toggle-mic').addEventListener('click', async () => {
+    micOn = !micOn;
+    if (localAudioTrack) await localAudioTrack.setEnabled(micOn);
+    document.getElementById('vc-toggle-mic').style.opacity = micOn ? '1' : '0.5';
+  });
+  document.getElementById('vc-toggle-cam').addEventListener('click', async () => {
+    camOn = !camOn;
+    if (localVideoTrack) await localVideoTrack.setEnabled(camOn);
+    document.getElementById('vc-toggle-cam').style.opacity = camOn ? '1' : '0.5';
+  });
+  document.getElementById('vc-leave').addEventListener('click', async () => {
+    try {
+      if (localAudioTrack) { localAudioTrack.close(); localAudioTrack = null; }
+      if (localVideoTrack) { localVideoTrack.close(); localVideoTrack = null; }
+      if (agoraClient) { await agoraClient.leave(); agoraClient = null; }
+    } catch (e) { /* ignore */ }
+    showScreen('screen-bookings');
+  });
 
   document.getElementById('tile-support').addEventListener('click', openSupportList);
 
