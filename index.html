@@ -810,9 +810,13 @@
     loadChatList();
   });
 
-  function loadChatList() {
+  async function loadChatList() {
     const body = document.getElementById('chat-list-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
+
+    const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+    const ratePerMin = parseFloat((astroSnap.exists() && astroSnap.data().price) || 0) || 0;
+
     const q = query(
       collection(db, 'chats'),
       where('astrologerId', '==', window.currentUid),
@@ -837,11 +841,14 @@
 
         const isEnded = c.status === 'ended';
         let durationText = 'Ongoing';
+        let earnedText = '';
         if (isEnded && c.createdAt?.toDate && c.endedAt?.toDate) {
           const mins = Math.max(1, Math.round((c.endedAt.toDate() - c.createdAt.toDate()) / 60000));
           const startT = c.createdAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
           const endT = c.endedAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
           durationText = `${mins} min (${startT} – ${endT})`;
+          const earned = mins * ratePerMin * 0.5;
+          earnedText = `₹${earned.toFixed(2)}`;
         }
         const dateText = c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '';
 
@@ -851,7 +858,10 @@
               <div class="bname">${c.userName || 'User'}${s.name ? ' (' + s.name + ')' : ''}</div>
               <div class="buser">${dateText}</div>
             </div>
-            <span class="bstatus" style="color:${isEnded ? 'var(--green)' : 'var(--gold-text)'};">${isEnded ? 'Completed' : 'Ongoing'}</span>
+            <div style="text-align:right;">
+              ${earnedText ? `<div style="font-family:'Cinzel',serif; font-weight:700; color:var(--gold-text); font-size:14px;">${earnedText}</div>` : ''}
+              <span class="bstatus" style="color:${isEnded ? 'var(--green)' : 'var(--gold-text)'};">${isEnded ? 'Completed' : 'Ongoing'}</span>
+            </div>
           </div>
           ${dob ? `<div style="font-size:12px; color:var(--dim); margin-bottom:2px;">DOB: ${dob}${tob ? ', ' + tob : ''}</div>` : ''}
           ${pob ? `<div style="font-size:12px; color:var(--dim); margin-bottom:2px;">POB: ${pob}</div>` : ''}
@@ -1546,8 +1556,24 @@
 
     if (window.isGeneralCall) {
       window.isGeneralCall = false;
+      if (isInitiator && activeCallStartedAt) {
+        const durationSec = Math.round((Date.now() - activeCallStartedAt) / 1000);
+        try {
+          await addDoc(collection(db, 'calls'), {
+            astrologerId: window.currentUid,
+            userId: window.currentGeneralCallUserId || null,
+            userName: window.currentGeneralCallUserName || 'User',
+            type: window.currentGeneralCallType || 'call',
+            duration: durationSec,
+            calledAt: serverTimestamp()
+          });
+        } catch (e) { /* ignore */ }
+      }
       activeCallOrderId = null;
       activeCallStartedAt = null;
+      window.currentGeneralCallUserId = null;
+      window.currentGeneralCallUserName = null;
+      window.currentGeneralCallType = null;
       showScreen('dashboard');
       return;
     }
@@ -2192,9 +2218,13 @@
     loadCallList();
   });
 
-  function loadCallList() {
+  async function loadCallList() {
     const body = document.getElementById('call-list-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
+
+    const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+    const ratePerMin = parseFloat((astroSnap.exists() && astroSnap.data().price) || 0) || 0;
+
     const q = query(
       collection(db, 'calls'),
       where('astrologerId', '==', window.currentUid),
@@ -2209,19 +2239,31 @@
       snap.forEach(d => {
         const c = d.data();
         const row = document.createElement('div');
-        row.className = 'list-item';
-        const time = c.calledAt?.toDate ? c.calledAt.toDate().toLocaleString('en-IN', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
-        const dur = c.duration ? Math.round(c.duration/60) + ' min' : '';
+        row.className = 'booking-row';
+
+        const dateText = c.calledAt?.toDate ? c.calledAt.toDate().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '';
+        const timeText = c.calledAt?.toDate ? c.calledAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
+        const mins = Math.max(1, Math.round((c.duration || 0) / 60));
+        const durationText = `${mins} min`;
+        const earned = mins * ratePerMin * 0.5;
+
         row.innerHTML = `
-          <div class="avatar">📞</div>
-          <div class="info">
-            <div class="row1"><span class="uname">${c.userName || 'User'}</span><span class="time">${time}</span></div>
-            <div class="preview">${c.type === 'video' ? 'Video call' : 'Audio call'} ${dur ? '· ' + dur : ''}</div>
-          </div>`;
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+            <div>
+              <div class="bname">${c.userName || 'User'}</div>
+              <div class="buser">${dateText}, ${timeText}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-family:'Cinzel',serif; font-weight:700; color:var(--gold-text); font-size:14px;">₹${earned.toFixed(2)}</div>
+              <span class="bstatus" style="color:var(--green);">Completed</span>
+            </div>
+          </div>
+          <div style="font-size:12px; color:var(--dim);">${c.type === 'video' ? '🎥 Video Call' : '📞 Audio Call'} · Duration: ${durationText}</div>
+        `;
         body.appendChild(row);
       });
-    }, () => {
-      body.innerHTML = '<div class="empty-state">No calls yet.</div>';
+    }, (err) => {
+      body.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
     });
   }
 
@@ -2368,6 +2410,9 @@
     } else if (reqData && (reqData.type === 'call' || reqData.type === 'video')) {
       try {
         window.isGeneralCall = true;
+        window.currentGeneralCallUserId = reqData.userId || null;
+        window.currentGeneralCallUserName = reqData.userName || 'User';
+        window.currentGeneralCallType = reqData.type;
         await startRemedyCall(reqId, reqData.type === 'video');
       } catch (err) {
         alert('General call accept error: ' + err.message);
