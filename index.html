@@ -1116,6 +1116,8 @@
           ${o.callStatus === 'live' && o.assignedAstrologerId === window.currentUid ? `<button class="banner-btn sm" style="width:100%; margin-top:12px;" onclick="joinBookingCall('${o.id}')">${bannerInner('📹 Join Video Call')}</button>` : ''}
         </div>
       `).join('');
+    }, (err) => {
+      listEl.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
     });
   }
 
