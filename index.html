@@ -401,6 +401,17 @@
 <body>
 <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
 
+<!-- IN-APP NOTIFICATION BANNER -->
+<div id="in-app-notification" style="display:none; position:fixed; top:14px; left:14px; right:14px; max-width:452px; margin:0 auto; z-index:200; transform:translateY(-120%); transition:transform 0.3s ease; cursor:pointer;">
+  <div class="gold-card" style="display:flex; align-items:center; gap:12px; padding:12px 14px;">
+    <div style="width:38px; height:38px; border-radius:50%; background:rgba(217,169,79,0.18); display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0;">💬</div>
+    <div style="flex:1; min-width:0;">
+      <div id="ian-title" style="font-weight:700; font-size:13.5px; color:var(--ink);">User</div>
+      <div id="ian-message" style="font-size:12.5px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Message</div>
+    </div>
+  </div>
+</div>
+
 <div id="login-card">
   <h1>Aangan Astrologer Login</h1>
   <input id="email" type="email" placeholder="Email">
@@ -816,14 +827,37 @@
       snap.forEach(d => {
         const c = d.data();
         const row = document.createElement('div');
-        row.className = 'list-item';
-        const time = c.lastMessageAt?.toDate ? c.lastMessageAt.toDate().toLocaleString('en-IN', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+        row.className = 'booking-row';
+        row.style.cursor = 'pointer';
+
+        const s = c.selfDetails || {};
+        const dob = s.dobDisplay || s.dob || '';
+        const tob = s.tobDisplay || s.tob || '';
+        const pob = s.pob || '';
+
+        const isEnded = c.status === 'ended';
+        let durationText = 'Ongoing';
+        if (isEnded && c.createdAt?.toDate && c.endedAt?.toDate) {
+          const mins = Math.max(1, Math.round((c.endedAt.toDate() - c.createdAt.toDate()) / 60000));
+          const startT = c.createdAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
+          const endT = c.endedAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
+          durationText = `${mins} min (${startT} – ${endT})`;
+        }
+        const dateText = c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '';
+
         row.innerHTML = `
-          <div class="avatar">🧑</div>
-          <div class="info">
-            <div class="row1"><span class="uname">${c.userName || 'User'}</span><span class="time">${time}</span></div>
-            <div class="preview">${c.lastMessage || ''}</div>
-          </div>`;
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+            <div>
+              <div class="bname">${c.userName || 'User'}${s.name ? ' (' + s.name + ')' : ''}</div>
+              <div class="buser">${dateText}</div>
+            </div>
+            <span class="bstatus" style="color:${isEnded ? 'var(--green)' : 'var(--gold-text)'};">${isEnded ? 'Completed' : 'Ongoing'}</span>
+          </div>
+          ${dob ? `<div style="font-size:12px; color:var(--dim); margin-bottom:2px;">DOB: ${dob}${tob ? ', ' + tob : ''}</div>` : ''}
+          ${pob ? `<div style="font-size:12px; color:var(--dim); margin-bottom:2px;">POB: ${pob}</div>` : ''}
+          <div style="font-size:12px; color:var(--dim);">Duration: ${durationText}</div>
+          <div style="font-size:11.5px; color:var(--dim); margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">"${c.lastMessage || ''}"</div>
+        `;
         row.addEventListener('click', () => openChatThread(d.id, c.userName || 'User'));
         body.appendChild(row);
       });
@@ -898,7 +932,39 @@
       } else {
         body.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }
+
+      // Show an in-app notification if a new user message arrives while
+      // this thread isn't the screen currently being viewed.
+      if (Date.now() - threadOpenedAt > 1500) {
+        snap.docChanges().forEach(change => {
+          if (change.type !== 'added') return;
+          const m = change.doc.data();
+          if (m.senderType !== 'user') return;
+          const isViewingThisThread =
+            window.currentChatId === chatId &&
+            document.getElementById('screen-chat-thread').style.display === 'block';
+          if (!isViewingThisThread) {
+            showInAppNotification(userName, m.text || '', chatId, userName);
+          }
+        });
+      }
     });
+  }
+
+  function showInAppNotification(title, message, chatId, userName) {
+    const el = document.getElementById('in-app-notification');
+    document.getElementById('ian-title').textContent = title;
+    document.getElementById('ian-message').textContent = message;
+    el.style.display = 'flex';
+    el.style.transform = 'translateY(0)';
+    el.onclick = () => {
+      el.style.transform = 'translateY(-120%)';
+      openChatThread(chatId, userName);
+    };
+    if (window.__ianTimeout) clearTimeout(window.__ianTimeout);
+    window.__ianTimeout = setTimeout(() => {
+      el.style.transform = 'translateY(-120%)';
+    }, 5000);
   }
 
   async function sendAstroMessage() {
@@ -2269,7 +2335,9 @@
         userId: reqData.userId || null,
         userName: reqData.userName || 'User',
         lastMessage: '',
-        lastMessageAt: serverTimestamp()
+        lastMessageAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        selfDetails: reqData.selfDetails || null
       }, { merge: true });
 
       // Auto-send the user's kundli details as the first message, if provided
