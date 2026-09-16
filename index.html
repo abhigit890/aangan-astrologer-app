@@ -383,7 +383,7 @@
       linear-gradient(180deg, #FFFDF8 0%, #FBF8F1 55%, #FAF6EE 100%);
   }
   #incoming-overlay .ring-avatar{
-    width:130px; height:130px; border-radius:50%;
+    width:130px; height:130px; border-radius:50%; position:relative; overflow:hidden;
     background: linear-gradient(160deg, var(--gold-hi), #B8860B);
     display:flex; align-items:center; justify-content:center; font-size:52px;
     margin-bottom:22px; animation:pulse 1.2s infinite; box-shadow:0 8px 24px rgba(120,90,20,.25);
@@ -506,7 +506,11 @@
 <div class="sub-screen" id="screen-chat-thread">
   <div class="sub-header">
     <span class="back" data-back="screen-chat-list">←</span>
-    <span class="title" id="thread-username" style="flex:1;">Chat</span>
+    <img id="thread-user-photo" style="display:none; width:34px; height:34px; border-radius:50%; object-fit:cover; margin-right:2px;">
+    <div style="flex:1; min-width:0;">
+      <div class="title" id="thread-username" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Chat</div>
+      <div id="thread-talktime" style="font-size:10.5px; color:var(--dim); font-weight:600;"></div>
+    </div>
     <span id="end-chat-btn" style="font-size:12px; color:#E08AA8; border:1px solid #E08AA8; border-radius:14px; padding:5px 12px; cursor:pointer;">End Chat</span>
   </div>
   <div class="thread-body" id="thread-body"></div>
@@ -696,7 +700,10 @@
 
 <!-- INCOMING REQUEST OVERLAY -->
 <div id="incoming-overlay">
-  <div class="ring-avatar">🕉️</div>
+  <div class="ring-avatar" id="req-avatar-wrap">
+    <span id="req-avatar-emoji">🕉️</span>
+    <img id="req-avatar-photo" style="display:none; width:100%; height:100%; object-fit:cover; border-radius:50%;">
+  </div>
   <div class="req-type" id="req-type">Incoming Chat</div>
   <div class="req-name" id="req-name">User</div>
   <div class="req-sub">Aangan User</div>
@@ -911,6 +918,33 @@
       document.getElementById('thread-send').disabled = ended;
       document.getElementById('end-chat-btn').style.display = ended ? 'none' : 'block';
     });
+
+    // Show the user's photo and estimated talk time (their wallet balance ÷ my price/min)
+    document.getElementById('thread-user-photo').style.display = 'none';
+    document.getElementById('thread-talktime').textContent = '';
+    (async () => {
+      try {
+        const chatDocSnap = await getDoc(doc(db, 'chats', chatId));
+        const userId = chatDocSnap.exists() ? chatDocSnap.data().userId : null;
+        const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+        const ratePerMin = parseFloat((astroSnap.exists() && astroSnap.data().price) || 0) || 0;
+        if (userId) {
+          const userSnap = await getDoc(doc(db, 'users', userId));
+          if (userSnap.exists()) {
+            const u = userSnap.data();
+            if (u.photoURL) {
+              document.getElementById('thread-user-photo').src = u.photoURL;
+              document.getElementById('thread-user-photo').style.display = 'block';
+            }
+            const balance = parseFloat(u.balance || 0) || 0;
+            if (ratePerMin > 0) {
+              const mins = Math.floor(balance / ratePerMin);
+              document.getElementById('thread-talktime').textContent = `Talk time: ~${mins} min`;
+            }
+          }
+        }
+      } catch (e) { /* ignore, header still shows the name */ }
+    })();
 
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('sentAt', 'asc'));
     const threadOpenedAt = Date.now();
@@ -2397,6 +2431,17 @@
       document.getElementById('req-name').textContent = r.userName || 'User';
       document.getElementById('req-start-label').textContent = isCall ? 'Start Call' : 'Start Chat';
       document.getElementById('req-decline').textContent = isCall ? 'Reject Call Request' : 'Reject Chat Request';
+      document.getElementById('req-avatar-emoji').style.display = 'flex';
+      document.getElementById('req-avatar-photo').style.display = 'none';
+      if (r.userId) {
+        getDoc(doc(db, 'users', r.userId)).then(uSnap => {
+          if (uSnap.exists() && uSnap.data().photoURL) {
+            document.getElementById('req-avatar-photo').src = uSnap.data().photoURL;
+            document.getElementById('req-avatar-photo').style.display = 'block';
+            document.getElementById('req-avatar-emoji').style.display = 'none';
+          }
+        }).catch(() => {});
+      }
       document.getElementById('incoming-overlay').style.display = 'flex';
       startRing();
       startReqCountdown();
