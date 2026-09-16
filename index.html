@@ -624,7 +624,7 @@
   </div>
 </div>
 
-<script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+<script src="https://download.agora.io/sdk/release/AgoraRTC_N.js" defer></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
@@ -1087,36 +1087,40 @@
     listEl.innerHTML = '<div class="empty-state">Loading...</div>';
     try {
       onSnapshot(collection(db, 'remedyOrders'), (snap) => {
-      if (snap.empty) {
-        listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
-        return;
-      }
-      const rows = [];
-      snap.forEach(d => {
-        const o = d.data();
-        // Show unassigned bookings, or ones assigned to this astrologer
-        if (!o.assignedAstrologerId || o.assignedAstrologerId === window.currentUid) {
-          rows.push({ id: d.id, ...o });
+      try {
+        if (snap.empty) {
+          listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
+          return;
         }
-      });
-      if (!rows.length) {
-        listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
-        return;
-      }
-      const statusLabel = { pending: 'Pending', assigned: 'Assigned to you', live: 'Live Now', completed: 'Completed' };
-      listEl.innerHTML = rows.map(o => `
-        <div class="booking-row">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
-              <div class="bname">${o.remedyName || 'Remedy'}</div>
-              <div class="buser">${o.userName || 'User'}</div>
+        const rows = [];
+        snap.forEach(d => {
+          const o = d.data();
+          // Show unassigned bookings, or ones assigned to this astrologer
+          if (!o.assignedAstrologerId || o.assignedAstrologerId === window.currentUid) {
+            rows.push({ id: d.id, ...o });
+          }
+        });
+        if (!rows.length) {
+          listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
+          return;
+        }
+        const statusLabel = { pending: 'Pending', assigned: 'Assigned to you', live: 'Live Now', completed: 'Completed' };
+        listEl.innerHTML = rows.map(o => `
+          <div class="booking-row">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+              <div>
+                <div class="bname">${o.remedyName || 'Remedy'}</div>
+                <div class="buser">${o.userName || 'User'}</div>
+              </div>
+              <span class="bstatus" style="color:${o.callStatus === 'live' ? 'var(--green)' : 'var(--dim)'};">${statusLabel[o.callStatus] || 'Pending'}</span>
             </div>
-            <span class="bstatus" style="color:${o.callStatus === 'live' ? 'var(--green)' : 'var(--dim)'};">${statusLabel[o.callStatus] || 'Pending'}</span>
+            ${!o.callStatus || o.callStatus === 'pending' ? `<button class="banner-btn sm" style="width:100%; margin-top:12px;" onclick="acceptAndGoLive('${o.id}')">${bannerInner('Accept & Go Live')}</button>` : ''}
+            ${o.callStatus === 'live' && o.assignedAstrologerId === window.currentUid ? `<button class="banner-btn sm" style="width:100%; margin-top:12px;" onclick="joinBookingCall('${o.id}')">${bannerInner('📹 Join Video Call')}</button>` : ''}
           </div>
-          ${!o.callStatus || o.callStatus === 'pending' ? `<button class="banner-btn sm" style="width:100%; margin-top:12px;" onclick="acceptAndGoLive('${o.id}')">${bannerInner('Accept & Go Live')}</button>` : ''}
-          ${o.callStatus === 'live' && o.assignedAstrologerId === window.currentUid ? `<button class="banner-btn sm" style="width:100%; margin-top:12px;" onclick="joinBookingCall('${o.id}')">${bannerInner('📹 Join Video Call')}</button>` : ''}
-        </div>
-      `).join('');
+        `).join('');
+      } catch (innerErr) {
+        listEl.innerHTML = `<div class="empty-state">Render Error: ${innerErr.message}</div>`;
+      }
     }, (err) => {
       listEl.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
     });
