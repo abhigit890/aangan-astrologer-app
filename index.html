@@ -861,8 +861,8 @@
         row.addEventListener('click', () => openChatThread(d.id, c.userName || 'User'));
         body.appendChild(row);
       });
-    }, () => {
-      body.innerHTML = '<div class="empty-state">No chats yet.</div>';
+    }, (err) => {
+      body.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
     });
   }
 
