@@ -1544,6 +1544,10 @@
       agoraClient.on("user-unpublished", () => {
         document.getElementById("vc-status").textContent = "User left the call";
       });
+      agoraClient.on("user-left", () => {
+        document.getElementById("vc-status").textContent = "Call ended";
+        setTimeout(() => cleanupAndExitCall(false), 600);
+      });
 
       await agoraClient.join(tokenData.appId, orderId, tokenData.token, tokenData.uid || null);
 
@@ -1560,9 +1564,13 @@
 
       // Watch for the other side ending the call, so this screen closes too
       if (activeCallDocUnsub) activeCallDocUnsub();
-      activeCallDocUnsub = onSnapshot(doc(db, 'remedyOrders', orderId), (snap) => {
-        const invite = snap.data()?.callInvite;
-        if (invite && invite.status === 'call_ended') {
+      const watchCollection = window.isGeneralCall ? 'requests' : 'remedyOrders';
+      activeCallDocUnsub = onSnapshot(doc(db, watchCollection, orderId), (snap) => {
+        const data = snap.data();
+        const ended = window.isGeneralCall
+          ? data?.status === 'call_ended'
+          : data?.callInvite?.status === 'call_ended';
+        if (ended) {
           cleanupAndExitCall(false);
         }
       });
@@ -1617,6 +1625,11 @@
             calledAt: serverTimestamp()
           });
         } catch (e) { /* ignore */ }
+        if (activeCallOrderId) {
+          try {
+            await updateDoc(doc(db, 'requests', activeCallOrderId), { status: 'call_ended' });
+          } catch (e) { /* ignore */ }
+        }
       }
       activeCallOrderId = null;
       activeCallStartedAt = null;
