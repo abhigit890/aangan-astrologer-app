@@ -529,7 +529,7 @@
 <!-- SUGGEST REMEDIES SCREEN -->
 <div class="sub-screen" id="screen-suggest-remedies">
   <div class="sub-header">
-    <span class="back" data-back="screen-chat-thread">←</span>
+    <span class="back" id="suggest-remedies-back">←</span>
     <span class="title">Suggest a Remedy</span>
   </div>
   <div class="uk-tabs" id="remedy-suggest-tabs">
@@ -571,6 +571,25 @@
   <div id="vc-remote-container" style="position:fixed; inset:0; background:#0C0904;"></div>
   <div id="vc-local-container" style="position:fixed; bottom:100px; right:16px; width:110px; height:150px; border-radius:12px; overflow:hidden; border:2px solid var(--gold); z-index:10; background:#000;"></div>
   <div id="vc-status" style="position:fixed; top:20px; left:0; right:0; text-align:center; color:#F5EFE2; font-size:13px; z-index:10;">Connecting...</div>
+
+  <div id="vc-call-info-panel" style="display:none; position:fixed; inset:0; z-index:8; background:#0C0904; overflow-y:auto; padding:50px 20px 200px; text-align:center;">
+    <div style="display:flex; justify-content:center; margin-bottom:16px;">
+      <img id="vc-info-photo" style="display:none; width:130px; height:130px; border-radius:50%; object-fit:cover; border:3px solid var(--gold);">
+      <div id="vc-info-photo-empty" style="width:130px; height:130px; border-radius:50%; background:rgba(217,169,79,0.15); display:flex; align-items:center; justify-content:center; font-size:52px;">🧑</div>
+    </div>
+    <div id="vc-info-name" style="color:#F5EFE2; font-size:22px; font-weight:700; margin-bottom:14px;">User</div>
+    <div id="vc-info-remaining" style="color:#C9B896; font-size:14px; margin-bottom:6px;">Remaining time: --:--</div>
+    <div id="vc-info-status" style="color:var(--green); font-size:13px; font-weight:600; margin-bottom:24px;">Call in-progress</div>
+
+    <div id="vc-info-kundli-card" style="display:none; text-align:left; background:rgba(255,255,255,0.06); border:1px solid var(--line); border-radius:14px; padding:16px;">
+      <div id="vc-info-kundli-details" style="color:#E8DFC8; font-size:13.5px; line-height:1.9;"></div>
+      <div style="display:flex; gap:8px; margin-top:14px;">
+        <button onclick="vcSuggestRemedy()" style="flex:1; padding:10px; border-radius:10px; border:1px solid var(--gold); background:transparent; color:var(--gold-hi); font-size:12.5px; font-weight:600; cursor:pointer;">Suggest Remedy</button>
+        <button onclick="vcOpenKundli()" style="flex:1; padding:10px; border-radius:10px; border:1px solid var(--gold); background:transparent; color:var(--gold-hi); font-size:12.5px; font-weight:600; cursor:pointer;">Open Kundli</button>
+      </div>
+    </div>
+  </div>
+
   <div style="position:fixed; bottom:24px; left:0; right:0; display:flex; justify-content:center; align-items:center; gap:16px; z-index:10;">
     <button id="vc-flip-cam" style="width:48px; height:48px; border-radius:50%; border:none; background:rgba(255,255,255,0.15); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
@@ -653,7 +672,7 @@
 <!-- USER KUNDLI VIEW SCREEN -->
 <div class="sub-screen" id="screen-user-kundli">
   <div class="sub-header">
-    <span class="back" data-back="screen-chat-thread">←</span>
+    <span class="back" id="user-kundli-back">←</span>
     <span class="title">Kundli</span>
   </div>
   <div class="uk-tabs" id="uk-tabs">
@@ -1099,6 +1118,24 @@
   }
 
   async function suggestRemedyToUser(remedyId, r) {
+    if (window.isGeneralCall && window.currentGeneralCallUserId) {
+      try {
+        const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+        const myName = (astroSnap.exists() && astroSnap.data().name) || 'Astrologer';
+        await addDoc(collection(db, 'remedyOrders'), {
+          remedyId, remedyName: r.name, remedyDesc: r.desc || '', remedyPrice: r.price || '',
+          userId: window.currentGeneralCallUserId, userName: window.currentGeneralCallUserName || 'User',
+          assignedAstrologerId: window.currentUid, assignedAstrologerName: myName,
+          status: 'pending', callStatus: 'pending', callDurationSeconds: 0, completionStatus: 'none',
+          createdAt: serverTimestamp()
+        });
+        alert('Remedy suggested to ' + (window.currentGeneralCallUserName || 'the user') + '!');
+      } catch (e) {
+        alert('Could not suggest remedy: ' + e.message);
+      }
+      showScreen('screen-videocall');
+      return;
+    }
     if (!window.currentChatId) return;
     await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
       senderType: 'remedy',
@@ -1562,6 +1599,13 @@
 
       document.getElementById("vc-status").textContent = "Waiting for user to join...";
 
+      // For general (non-remedy) audio calls, show the rich caller-info panel
+      if (window.isGeneralCall && !isVideo) {
+        await populateVcInfoPanel(orderId);
+      } else {
+        document.getElementById('vc-call-info-panel').style.display = 'none';
+      }
+
       // Watch for the other side ending the call, so this screen closes too
       if (activeCallDocUnsub) activeCallDocUnsub();
       const watchCollection = window.isGeneralCall ? 'requests' : 'remedyOrders';
@@ -1613,6 +1657,9 @@
 
     if (window.isGeneralCall) {
       window.isGeneralCall = false;
+      document.getElementById('vc-call-info-panel').style.display = 'none';
+      if (vcRemainingInterval) { clearInterval(vcRemainingInterval); vcRemainingInterval = null; }
+      window.currentGeneralCallSelfDetails = null;
       if (isInitiator && activeCallStartedAt) {
         const durationSec = Math.round((Date.now() - activeCallStartedAt) / 1000);
         try {
@@ -1683,6 +1730,88 @@
       }
     } catch (e) { /* not supported on this device/browser — icon still reflects the choice */ }
     document.getElementById('vc-speaker-btn').style.background = speakerOn ? 'rgba(255,255,255,0.15)' : '#4E8FC4';
+  });
+
+  let vcRemainingInterval = null;
+
+  async function populateVcInfoPanel(orderId) {
+    const panel = document.getElementById('vc-call-info-panel');
+    document.getElementById('vc-info-name').textContent = window.currentGeneralCallUserName || 'User';
+    document.getElementById('vc-info-status').textContent = 'Call in-progress';
+
+    const photoImg = document.getElementById('vc-info-photo');
+    const photoEmpty = document.getElementById('vc-info-photo-empty');
+    photoImg.style.display = 'none';
+    photoEmpty.style.display = 'flex';
+    if (window.currentGeneralCallUserId) {
+      try {
+        const uSnap = await getDoc(doc(db, 'users', window.currentGeneralCallUserId));
+        if (uSnap.exists() && uSnap.data().photoURL) {
+          photoImg.src = uSnap.data().photoURL;
+          photoImg.style.display = 'block';
+          photoEmpty.style.display = 'none';
+        }
+      } catch (e) { /* keep placeholder */ }
+    }
+
+    const s = window.currentGeneralCallSelfDetails;
+    const kundliCard = document.getElementById('vc-info-kundli-card');
+    if (s) {
+      kundliCard.style.display = 'block';
+      document.getElementById('vc-info-kundli-details').innerHTML = `
+        <div>Name: ${s.name || '-'}</div>
+        <div>Gender: ${s.gender || '-'}</div>
+        <div>DOB: ${s.dobDisplay || '-'}${s.tobDisplay ? ', ' + s.tobDisplay : ''}</div>
+        <div>POB: ${s.pob || '-'}</div>
+      `;
+    } else {
+      kundliCard.style.display = 'none';
+    }
+
+    if (vcRemainingInterval) { clearInterval(vcRemainingInterval); vcRemainingInterval = null; }
+    try {
+      const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+      const ratePerMin = parseFloat((astroSnap.exists() && astroSnap.data().price) || 0) || 0;
+      let remainingSec = 0;
+      if (window.currentGeneralCallUserId && ratePerMin > 0) {
+        const uSnap = await getDoc(doc(db, 'users', window.currentGeneralCallUserId));
+        const balance = uSnap.exists() ? (parseFloat(uSnap.data().balance || 0) || 0) : 0;
+        remainingSec = Math.floor((balance / ratePerMin) * 60);
+      }
+      const renderTime = () => {
+        const m = Math.floor(remainingSec / 60);
+        const sec = remainingSec % 60;
+        document.getElementById('vc-info-remaining').textContent =
+          `Remaining time: ${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+      };
+      renderTime();
+      vcRemainingInterval = setInterval(() => {
+        remainingSec = Math.max(0, remainingSec - 1);
+        renderTime();
+        if (remainingSec <= 0) { clearInterval(vcRemainingInterval); vcRemainingInterval = null; }
+      }, 1000);
+    } catch (e) { /* ignore */ }
+
+    panel.style.display = 'block';
+  }
+
+  window.vcOpenKundli = function() {
+    if (!activeCallOrderId) return;
+    window.currentChatId = activeCallOrderId;
+    document.getElementById('tt-kundli').click();
+  };
+
+  window.vcSuggestRemedy = function() {
+    showScreen('screen-suggest-remedies');
+    loadRemedySuggestList('pooja');
+  };
+
+  document.getElementById('suggest-remedies-back').addEventListener('click', () => {
+    showScreen(window.isGeneralCall ? 'screen-videocall' : 'screen-chat-thread');
+  });
+
+  document.getElementById('user-kundli-back').addEventListener('click', () => {
+    showScreen(window.isGeneralCall ? 'screen-videocall' : 'screen-chat-thread');
   });
 
   document.getElementById('vc-leave').addEventListener('click', () => cleanupAndExitCall(true));
@@ -2378,20 +2507,25 @@
   let ringInterval = null;
   function startRing() {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    function beep() {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 740;
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.4);
-    }
-    beep();
-    ringInterval = setInterval(beep, 900);
     window.__ringCtx = ctx;
+    function playRingBurst() {
+      // Classic dual-tone phone ring (two tones together), ~2s on
+      [480, 620].forEach(freq => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.001, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.11, ctx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.11, ctx.currentTime + 1.9);
+        gain.gain.linearRampToValueAtTime(0.001, ctx.currentTime + 2.0);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 2.0);
+      });
+    }
+    playRingBurst();
+    ringInterval = setInterval(playRingBurst, 3000); // ring ~2s, pause ~1s, repeat
   }
   function stopRing() {
     if (ringInterval) { clearInterval(ringInterval); ringInterval = null; }
@@ -2514,6 +2648,7 @@
         window.currentGeneralCallUserId = reqData.userId || null;
         window.currentGeneralCallUserName = reqData.userName || 'User';
         window.currentGeneralCallType = reqData.type;
+        window.currentGeneralCallSelfDetails = reqData.selfDetails || null;
         await startRemedyCall(reqId, reqData.type === 'video');
       } catch (err) {
         alert('General call accept error: ' + err.message);
