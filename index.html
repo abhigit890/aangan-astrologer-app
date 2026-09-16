@@ -1085,7 +1085,8 @@
     showScreen('screen-bookings');
     const listEl = document.getElementById('bookings-list');
     listEl.innerHTML = '<div class="empty-state">Loading...</div>';
-    onSnapshot(collection(db, 'remedyOrders'), (snap) => {
+    try {
+      onSnapshot(collection(db, 'remedyOrders'), (snap) => {
       if (snap.empty) {
         listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
         return;
@@ -1119,6 +1120,9 @@
     }, (err) => {
       listEl.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
     });
+    } catch (err) {
+      listEl.innerHTML = `<div class="empty-state">Sync Error: ${err.message}</div>`;
+    }
   }
 
   window.acceptAndGoLive = async function(orderId) {
