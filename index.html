@@ -2358,7 +2358,10 @@
       }
       // System message marking the start of the chat
       await addDoc(collection(db, 'chats', reqId, 'messages'), {
-        text: 'This chat has been started', senderType: 'system', sentAt: serverTimestamp()
+        text: 'This is an automated message to confirm that the chat has started.', senderType: 'system', sentAt: serverTimestamp()
+      });
+      await addDoc(collection(db, 'chats', reqId, 'messages'), {
+        text: 'Welcome to Aangan. Your astrologer will take a minute to analyse your details. You may ask your question in the meantime.', senderType: 'system', sentAt: serverTimestamp()
       });
 
       openChatThread(reqId, reqData.userName || 'User');
