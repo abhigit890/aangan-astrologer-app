@@ -489,6 +489,22 @@
   <div id="remedy-suggest-list" class="uk-content"></div>
 </div>
 
+<!-- REMEDY CHAT -->
+<div class="sub-screen" id="screen-remedy-chat">
+  <div class="sub-header">
+    <span class="back" data-back="screen-bookings">←</span>
+    <span class="title" id="remedy-chat-title" style="flex:1;">Remedy</span>
+    <span id="rc-audio-btn" style="font-size:18px; cursor:pointer; margin-right:14px;">📞</span>
+    <span id="rc-video-btn" style="font-size:18px; cursor:pointer; margin-right:14px;">🎥</span>
+    <span id="rc-end-btn" style="display:none; font-size:12px; color:#E08AA8; border:1px solid #E08AA8; border-radius:14px; padding:5px 12px; cursor:pointer;">Remedy End</span>
+  </div>
+  <div class="thread-body" id="remedy-chat-body" style="padding-bottom:90px;"></div>
+  <div class="thread-input-bar">
+    <input type="text" id="remedy-chat-input" placeholder="Type a message...">
+    <button id="remedy-chat-send">➤</button>
+  </div>
+</div>
+
 <!-- REMEDY BOOKINGS -->
 <div class="sub-screen" id="screen-bookings">
   <div class="sub-header">
@@ -503,10 +519,19 @@
   <div id="vc-remote-container" style="position:fixed; inset:0; background:#0C0904;"></div>
   <div id="vc-local-container" style="position:fixed; bottom:100px; right:16px; width:110px; height:150px; border-radius:12px; overflow:hidden; border:2px solid var(--gold); z-index:10; background:#000;"></div>
   <div id="vc-status" style="position:fixed; top:20px; left:0; right:0; text-align:center; color:#F5EFE2; font-size:13px; z-index:10;">Connecting...</div>
-  <div style="position:fixed; bottom:24px; left:0; right:0; display:flex; justify-content:center; gap:18px; z-index:10;">
-    <button id="vc-toggle-mic" style="width:52px; height:52px; border-radius:50%; border:none; background:rgba(255,255,255,0.15); color:#fff; font-size:20px; cursor:pointer;">🎤</button>
-    <button id="vc-leave" style="width:60px; height:60px; border-radius:50%; border:none; background:#C4577E; color:#fff; font-size:22px; cursor:pointer;">📞</button>
-    <button id="vc-toggle-cam" style="width:52px; height:52px; border-radius:50%; border:none; background:rgba(255,255,255,0.15); color:#fff; font-size:20px; cursor:pointer;">📷</button>
+  <div style="position:fixed; bottom:24px; left:0; right:0; display:flex; justify-content:center; align-items:center; gap:16px; z-index:10;">
+    <button id="vc-flip-cam" style="width:48px; height:48px; border-radius:50%; border:none; background:rgba(255,255,255,0.15); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+    </button>
+    <button id="vc-toggle-mic" style="width:48px; height:48px; border-radius:50%; border:none; background:rgba(255,255,255,0.15); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+      <svg id="vc-mic-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+    </button>
+    <button id="vc-toggle-cam" style="width:56px; height:56px; border-radius:50%; border:none; background:rgba(255,255,255,0.2); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+      <svg id="vc-cam-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+    </button>
+    <button id="vc-leave" style="width:56px; height:56px; border-radius:50%; border:none; background:#D64C6B; color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" transform="rotate(135)"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+    </button>
   </div>
 </div>
 
@@ -632,7 +657,7 @@
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
     getFirestore, doc, setDoc, updateDoc, serverTimestamp, getDoc, addDoc,
-    collection, query, where, orderBy, onSnapshot, getDocs, limit, runTransaction
+    collection, query, where, orderBy, onSnapshot, getDocs, limit, runTransaction, increment
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -1104,18 +1129,18 @@
           listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
           return;
         }
-        const statusLabel = { pending: 'Pending', assigned: 'Assigned to you', live: 'Live Now', completed: 'Completed' };
+        const statusLabel = { pending: 'Pending', assigned: 'Assigned to you', live: 'In Progress', completed: 'Completed' };
         listEl.innerHTML = rows.map(o => `
           <div class="booking-row">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
               <div>
                 <div class="bname">${o.remedyName || 'Remedy'}</div>
-                <div class="buser">${o.userName || 'User'}</div>
+                <div class="buser">${o.userName || 'User'} · ${o.remedyPrice || ''}</div>
               </div>
               <span class="bstatus" style="color:${o.callStatus === 'live' ? 'var(--green)' : 'var(--dim)'};">${statusLabel[o.callStatus] || 'Pending'}</span>
             </div>
-            ${!o.callStatus || o.callStatus === 'pending' ? `<button style="width:100%; margin-top:12px; padding:11px; border-radius:10px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; cursor:pointer;" onclick="acceptAndGoLive('${o.id}')">Accept &amp; Go Live</button>` : ''}
-            ${o.callStatus === 'live' && o.assignedAstrologerId === window.currentUid ? `<button style="width:100%; margin-top:12px; padding:11px; border-radius:10px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; cursor:pointer;" onclick="joinBookingCall('${o.id}')">📹 Join Video Call</button>` : ''}
+            ${!o.assignedAstrologerId ? `<button style="width:100%; margin-top:12px; padding:11px; border-radius:10px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; cursor:pointer;" onclick="acceptBooking('${o.id}')">Accept</button>` : ''}
+            ${o.assignedAstrologerId === window.currentUid ? `<button style="width:100%; margin-top:12px; padding:11px; border-radius:10px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; cursor:pointer;" onclick="openRemedyChat('${o.id}')">Open Chat</button>` : ''}
           </div>
         `).join('');
       } catch (innerErr) {
@@ -1129,15 +1154,95 @@
     }
   }
 
-  window.acceptAndGoLive = async function(orderId) {
+  window.acceptBooking = async function(orderId) {
     const nameSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
     const myName = (nameSnap.exists() && nameSnap.data().name) || (nameSnap.exists() && nameSnap.data().email) || 'Astrologer';
     await updateDoc(doc(db, 'remedyOrders', orderId), {
       assignedAstrologerId: window.currentUid, assignedAstrologerName: myName,
-      callStatus: 'live', updatedAt: serverTimestamp()
+      callStatus: 'assigned', updatedAt: serverTimestamp()
     });
-    joinBookingCall(orderId);
+    openRemedyChat(orderId);
   };
+
+  let remedyChatUnsubMsgs = null;
+  let remedyChatUnsubOrder = null;
+
+  window.openRemedyChat = async function(orderId) {
+    showScreen('screen-remedy-chat');
+    window.currentRemedyOrderId = orderId;
+    document.getElementById('remedy-chat-body').innerHTML = '<div class="empty-state">Loading...</div>';
+    window.scrollTo(0, 0);
+
+    const orderSnap = await getDoc(doc(db, 'remedyOrders', orderId));
+    const order = orderSnap.exists() ? orderSnap.data() : {};
+    document.getElementById('remedy-chat-title').textContent = order.remedyName || 'Remedy';
+
+    // Auto-send intro messages the first time this chat is opened
+    const existingMsgs = await getDocs(collection(db, 'remedyOrders', orderId, 'messages'));
+    if (existingMsgs.empty) {
+      const detailsText = `${order.remedyName || 'Remedy'}\n${order.remedyDesc || ''}\n\nPerformed by: ${order.assignedAstrologerName || 'Astrologer'}`;
+      await addDoc(collection(db, 'remedyOrders', orderId, 'messages'), {
+        text: detailsText, senderType: 'system', sentAt: serverTimestamp()
+      });
+      await addDoc(collection(db, 'remedyOrders', orderId, 'messages'), {
+        text: 'Astrologer has joined. Connecting you soon!', senderType: 'system', sentAt: serverTimestamp()
+      });
+    }
+
+    if (remedyChatUnsubMsgs) { remedyChatUnsubMsgs(); remedyChatUnsubMsgs = null; }
+    if (remedyChatUnsubOrder) { remedyChatUnsubOrder(); remedyChatUnsubOrder = null; }
+
+    remedyChatUnsubOrder = onSnapshot(doc(db, 'remedyOrders', orderId), (snap) => {
+      const o = snap.data() || {};
+      const durationOk = (o.callDurationSeconds || 0) >= 600;
+      document.getElementById('rc-end-btn').style.display = (durationOk && !o.remedyEndRequested) ? 'block' : 'none';
+    });
+
+    const body = document.getElementById('remedy-chat-body');
+    const openedAt = Date.now();
+    const q = query(collection(db, 'remedyOrders', orderId, 'messages'), orderBy('sentAt', 'asc'));
+    remedyChatUnsubMsgs = onSnapshot(q, (snap) => {
+      body.innerHTML = '';
+      snap.forEach(d => {
+        const m = d.data();
+        const bubble = document.createElement('div');
+        const cls = m.senderType === 'astrologer' ? 'from-astro' : m.senderType === 'system' ? 'from-system' : 'from-user';
+        bubble.className = 'bubble ' + cls;
+        const time = m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
+        bubble.innerHTML = cls === 'from-system' ? (m.text || '') : `${m.text || ''}<span class="ts">${time}</span>`;
+        body.appendChild(bubble);
+      });
+      if (Date.now() - openedAt < 1200) { window.scrollTo(0,0); document.body.scrollTop = 0; document.documentElement.scrollTop = 0; }
+      else { body.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }
+    });
+  };
+
+  async function sendRemedyChatMessage() {
+    const input = document.getElementById('remedy-chat-input');
+    const text = input.value.trim();
+    if (!text || !window.currentRemedyOrderId) return;
+    input.value = '';
+    await addDoc(collection(db, 'remedyOrders', window.currentRemedyOrderId, 'messages'), {
+      text, senderType: 'astrologer', sentAt: serverTimestamp()
+    });
+  }
+  document.getElementById('remedy-chat-send').addEventListener('click', sendRemedyChatMessage);
+  document.getElementById('remedy-chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendRemedyChatMessage(); });
+
+  document.getElementById('rc-audio-btn').addEventListener('click', () => startRemedyCall(window.currentRemedyOrderId, false));
+  document.getElementById('rc-video-btn').addEventListener('click', () => startRemedyCall(window.currentRemedyOrderId, true));
+
+  document.getElementById('rc-end-btn').addEventListener('click', async () => {
+    if (!confirm('Mark this remedy as complete? This will be sent to admin for verification.')) return;
+    await updateDoc(doc(db, 'remedyOrders', window.currentRemedyOrderId), {
+      remedyEndRequested: true, completionStatus: 'pending_review', callStatus: 'completed',
+      remedyEndRequestedAt: serverTimestamp()
+    });
+    await addDoc(collection(db, 'remedyOrders', window.currentRemedyOrderId, 'messages'), {
+      text: 'This remedy session has ended.', senderType: 'system', sentAt: serverTimestamp()
+    });
+    document.getElementById('rc-end-btn').style.display = 'none';
+  });
 
   const AGORA_BACKEND_URL = "https://kinnar-top-astro.vercel.app";
   let agoraClient = null;
@@ -1146,9 +1251,18 @@
   let micOn = true;
   let camOn = true;
 
-  window.joinBookingCall = async function(orderId) {
+  let activeCallOrderId = null;
+  let activeCallStartedAt = null;
+
+  window.startRemedyCall = async function(orderId, isVideo) {
     showScreen('screen-videocall');
     document.getElementById('vc-status').textContent = 'Connecting...';
+    document.getElementById('vc-local-container').style.display = isVideo ? 'block' : 'none';
+    document.getElementById('vc-toggle-cam').style.display = isVideo ? 'flex' : 'none';
+    document.getElementById('vc-flip-cam').style.display = isVideo ? 'flex' : 'none';
+    activeCallOrderId = orderId;
+    activeCallStartedAt = Date.now();
+    updateDoc(doc(db, 'remedyOrders', orderId), { callStatus: 'live' }).catch(()=>{});
 
     try {
       const tokenRes = await fetch(`${AGORA_BACKEND_URL}/api/agora-token`, {
@@ -1172,9 +1286,14 @@
 
       await agoraClient.join(tokenData.appId, orderId, tokenData.token, tokenData.uid || null);
 
-      [localAudioTrack, localVideoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks();
-      localVideoTrack.play("vc-local-container");
-      await agoraClient.publish([localAudioTrack, localVideoTrack]);
+      if (isVideo) {
+        [localAudioTrack, localVideoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks();
+        localVideoTrack.play("vc-local-container");
+        await agoraClient.publish([localAudioTrack, localVideoTrack]);
+      } else {
+        localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+        await agoraClient.publish([localAudioTrack]);
+      }
 
       document.getElementById("vc-status").textContent = "Waiting for user to join...";
     } catch (err) {
@@ -1185,12 +1304,25 @@
   document.getElementById('vc-toggle-mic').addEventListener('click', async () => {
     micOn = !micOn;
     if (localAudioTrack) await localAudioTrack.setEnabled(micOn);
-    document.getElementById('vc-toggle-mic').style.opacity = micOn ? '1' : '0.5';
+    document.getElementById('vc-mic-icon').innerHTML = micOn
+      ? '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>'
+      : '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="2" y1="2" x2="22" y2="22" stroke="#D64C6B"/>';
+    document.getElementById('vc-toggle-mic').style.background = micOn ? 'rgba(255,255,255,0.15)' : '#D64C6B';
   });
   document.getElementById('vc-toggle-cam').addEventListener('click', async () => {
     camOn = !camOn;
     if (localVideoTrack) await localVideoTrack.setEnabled(camOn);
-    document.getElementById('vc-toggle-cam').style.opacity = camOn ? '1' : '0.5';
+    document.getElementById('vc-toggle-cam').style.background = camOn ? 'rgba(255,255,255,0.2)' : '#D64C6B';
+  });
+  document.getElementById('vc-flip-cam').addEventListener('click', async () => {
+    if (!localVideoTrack) return;
+    try {
+      const devices = await AgoraRTC.getCameras();
+      if (devices.length < 2) return;
+      const current = localVideoTrack.getTrackLabel ? localVideoTrack.getTrackLabel() : '';
+      const next = devices.find(d => d.label !== current) || devices[0];
+      await localVideoTrack.setDevice(next.deviceId);
+    } catch (e) { /* ignore */ }
   });
   document.getElementById('vc-leave').addEventListener('click', async () => {
     try {
@@ -1198,7 +1330,21 @@
       if (localVideoTrack) { localVideoTrack.close(); localVideoTrack = null; }
       if (agoraClient) { await agoraClient.leave(); agoraClient = null; }
     } catch (e) { /* ignore */ }
-    showScreen('screen-bookings');
+
+    if (activeCallOrderId && activeCallStartedAt) {
+      const elapsedSec = Math.round((Date.now() - activeCallStartedAt) / 1000);
+      try {
+        await updateDoc(doc(db, 'remedyOrders', activeCallOrderId), {
+          callDurationSeconds: increment(elapsedSec)
+        });
+      } catch (e) { /* ignore */ }
+      const orderId = activeCallOrderId;
+      activeCallOrderId = null;
+      activeCallStartedAt = null;
+      openRemedyChat(orderId);
+    } else {
+      showScreen('screen-bookings');
+    }
   });
 
   document.getElementById('tile-support').addEventListener('click', openSupportList);
