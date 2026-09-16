@@ -632,6 +632,17 @@
   <div class="score-block" id="scoreboard-body"></div>
 </div>
 
+<!-- INCOMING REMEDY CALL OVERLAY -->
+<div id="incoming-remedy-overlay" style="display:none; position:fixed; inset:0; background:rgba(4,2,1,0.96); z-index:110; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px;">
+  <div class="ring-avatar">🙏</div>
+  <div class="req-type" id="rc-req-type">Remedy Performance Call</div>
+  <div class="req-name" id="rc-req-name">User</div>
+  <div class="req-actions">
+    <div><button class="req-btn decline" id="rc-req-decline">✕</button><div class="req-btn-label">Decline</div></div>
+    <div><button class="req-btn accept" id="rc-req-accept">✓</button><div class="req-btn-label">Accept</div></div>
+  </div>
+</div>
+
 <!-- INCOMING REQUEST OVERLAY -->
 <div id="incoming-overlay">
   <div class="ring-avatar">🧑</div>
@@ -707,6 +718,7 @@
       document.getElementById('header-uid').textContent = 'ID: ' + user.uid.slice(0,8);
       window.currentUid = user.uid;
       startRequestListener(user.uid);
+      startRemedyCallListener(user.uid);
     } else {
       loginCard.style.display = 'block';
       dashboard.style.display = 'none';
@@ -1229,8 +1241,78 @@
   document.getElementById('remedy-chat-send').addEventListener('click', sendRemedyChatMessage);
   document.getElementById('remedy-chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendRemedyChatMessage(); });
 
-  document.getElementById('rc-audio-btn').addEventListener('click', () => startRemedyCall(window.currentRemedyOrderId, false));
-  document.getElementById('rc-video-btn').addEventListener('click', () => startRemedyCall(window.currentRemedyOrderId, true));
+  document.getElementById('rc-audio-btn').addEventListener('click', () => initiateRemedyCall(window.currentRemedyOrderId, false));
+  document.getElementById('rc-video-btn').addEventListener('click', () => initiateRemedyCall(window.currentRemedyOrderId, true));
+
+  // ---- Remedy call signaling (ringing before joining Agora) ----
+  let outgoingCallUnsub = null;
+
+  async function initiateRemedyCall(orderId, isVideo) {
+    await updateDoc(doc(db, 'remedyOrders', orderId), {
+      callInvite: { type: isVideo ? 'video' : 'audio', from: 'astrologer', status: 'ringing' }
+    });
+    showScreen('screen-videocall');
+    document.getElementById('vc-local-container').style.display = 'none';
+    document.getElementById('vc-toggle-cam').style.display = 'none';
+    document.getElementById('vc-flip-cam').style.display = 'none';
+    document.getElementById('vc-toggle-mic').style.display = 'none';
+    document.getElementById('vc-status').textContent = 'Calling... waiting for user to accept';
+
+    if (outgoingCallUnsub) outgoingCallUnsub();
+    outgoingCallUnsub = onSnapshot(doc(db, 'remedyOrders', orderId), (snap) => {
+      const invite = snap.data()?.callInvite;
+      if (invite && invite.status === 'accepted') {
+        outgoingCallUnsub(); outgoingCallUnsub = null;
+        document.getElementById('vc-toggle-mic').style.display = 'flex';
+        startRemedyCall(orderId, isVideo);
+      } else if (invite && invite.status === 'ended') {
+        outgoingCallUnsub(); outgoingCallUnsub = null;
+        showScreen('screen-remedy-chat');
+      }
+    });
+  }
+
+  // ---- Incoming remedy call ring (from user) ----
+  let remedyRingUnsub = null;
+  let currentIncomingRemedyOrderId = null;
+
+  function startRemedyCallListener(uid) {
+    const q = query(collection(db, 'remedyOrders'), where('assignedAstrologerId', '==', uid));
+    remedyRingUnsub = onSnapshot(q, (snap) => {
+      if (currentIncomingRemedyOrderId) return;
+      snap.forEach(d => {
+        if (currentIncomingRemedyOrderId) return;
+        const o = d.data();
+        if (o.callInvite && o.callInvite.status === 'ringing' && o.callInvite.from === 'user') {
+          currentIncomingRemedyOrderId = d.id;
+          window.currentIncomingRemedyType = o.callInvite.type;
+          document.getElementById('rc-req-type').textContent = (o.callInvite.type === 'video' ? 'Video' : 'Audio') + ' — Remedy Performance Call';
+          document.getElementById('rc-req-name').textContent = o.userName || 'User';
+          document.getElementById('incoming-remedy-overlay').style.display = 'flex';
+          startRing();
+        }
+      });
+    });
+  }
+
+  document.getElementById('rc-req-accept').addEventListener('click', async () => {
+    if (!currentIncomingRemedyOrderId) return;
+    stopRing();
+    document.getElementById('incoming-remedy-overlay').style.display = 'none';
+    const orderId = currentIncomingRemedyOrderId;
+    const isVideo = window.currentIncomingRemedyType === 'video';
+    await updateDoc(doc(db, 'remedyOrders', orderId), { 'callInvite.status': 'accepted' });
+    currentIncomingRemedyOrderId = null;
+    startRemedyCall(orderId, isVideo);
+  });
+
+  document.getElementById('rc-req-decline').addEventListener('click', async () => {
+    if (!currentIncomingRemedyOrderId) return;
+    stopRing();
+    document.getElementById('incoming-remedy-overlay').style.display = 'none';
+    await updateDoc(doc(db, 'remedyOrders', currentIncomingRemedyOrderId), { 'callInvite.status': 'ended' });
+    currentIncomingRemedyOrderId = null;
+  });
 
   document.getElementById('rc-end-btn').addEventListener('click', async () => {
     if (!confirm('Mark this remedy as complete? This will be sent to admin for verification.')) return;
@@ -1330,6 +1412,15 @@
       if (localVideoTrack) { localVideoTrack.close(); localVideoTrack = null; }
       if (agoraClient) { await agoraClient.leave(); agoraClient = null; }
     } catch (e) { /* ignore */ }
+
+    if (outgoingCallUnsub) {
+      outgoingCallUnsub(); outgoingCallUnsub = null;
+      if (window.currentRemedyOrderId) {
+        await updateDoc(doc(db, 'remedyOrders', window.currentRemedyOrderId), { 'callInvite.status': 'ended' }).catch(()=>{});
+      }
+      showScreen('screen-remedy-chat');
+      return;
+    }
 
     if (activeCallOrderId && activeCallStartedAt) {
       const elapsedSec = Math.round((Date.now() - activeCallStartedAt) / 1000);
