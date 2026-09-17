@@ -163,23 +163,32 @@
   .bubble.from-astro{ align-self:flex-end; background:var(--gold); color:#2E1D0C; border-bottom-right-radius:4px; }
   .bubble.from-system{ align-self:center; background:rgba(62,158,92,0.15); border:1px solid var(--green); color:var(--green); font-size:12px; font-weight:700; text-align:center; padding:6px 14px; }
   .bubble .ts{ display:block; font-size:10px; opacity:0.6; margin-top:4px; }
+  .thread-bottom-wrap{
+    position:fixed; left:0; right:0; bottom:0; max-width:480px; margin:0 auto; z-index:9;
+    display:flex; flex-direction:column;
+    background:var(--bg-soft); backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%);
+  }
   .thread-input-bar{
-    position:fixed; bottom:0; left:0; right:0; max-width:480px; margin:0 auto;
-    display:flex; gap:8px; padding:10px 14px; background:var(--bg-soft); backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%); border-top:1px solid var(--line);
+    display:flex; align-items:center; gap:8px; padding:10px 14px;
+    border-top:1px solid var(--line);
   }
+  .thread-input-pill{
+    flex:1; display:flex; align-items:center; gap:8px; padding:6px 10px;
+    border-radius:24px; border:1px solid var(--line); background:rgba(255,255,255,0.55);
+  }
+  .thread-input-pill span{ font-size:19px; cursor:pointer; flex-shrink:0; }
   .thread-input-bar input{
-    flex:1; padding:12px 14px; border-radius:20px; border:1px solid var(--line);
-    background:rgba(255,255,255,0.55); color:var(--ink); font-size:14px;
+    flex:1; min-width:0; border:none; background:transparent; outline:none;
+    color:var(--ink); font-size:14px; padding:6px 0;
   }
-  .thread-input-bar button{
-    width:44px; height:44px; border-radius:50%; border:none; background:var(--gold);
-    color:#2E1D0C; font-size:18px; cursor:pointer; flex-shrink:0;
+  .thread-input-bar .round-btn{
+    width:42px; height:42px; border-radius:50%; border:none; background:var(--gold);
+    color:#2E1D0C; font-size:18px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center;
   }
 
   /* chat thread toolbar */
   .thread-toolbar{
-    position:fixed; left:0; right:0; bottom:64px; max-width:480px; margin:0 auto;
-    display:flex; justify-content:space-around; background:var(--bg-soft); backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%);
+    display:flex; justify-content:space-around;
     border-top:1px solid var(--line); padding:8px 4px;
   }
   .tt-btn{
@@ -522,21 +531,23 @@
     <span id="end-chat-btn" style="font-size:12px; color:#E08AA8; border:1px solid #E08AA8; border-radius:14px; padding:5px 12px; cursor:pointer;">End Chat</span>
   </div>
   <div class="thread-body" id="thread-body"></div>
-  <div class="thread-toolbar">
-    <div class="tt-btn" id="tt-translate"><span class="tt-icon">🌐</span><span>Translate Chat</span></div>
-    <div class="tt-btn" id="tt-remedies"><span class="tt-icon">🙏</span><span>Suggest Remedies</span></div>
-    <div class="tt-btn" id="tt-kundli"><span class="tt-icon">📜</span><span>Kundli</span></div>
-    <div class="tt-btn" id="tt-history"><span class="tt-icon">🕘</span><span>Chat History</span></div>
-  </div>
-  <div class="thread-input-bar" style="flex-wrap:wrap; align-items:center;">
-    <span id="tt-qr-btn" style="font-size:19px; cursor:pointer; flex-shrink:0;">⚡</span>
-    <span id="tt-photo-btn" style="font-size:19px; cursor:pointer; flex-shrink:0;">🖼️</span>
-    <span id="tt-camera-btn" style="font-size:19px; cursor:pointer; flex-shrink:0;">📷</span>
-    <input type="file" id="thread-photo-input" accept="image/*" style="display:none;">
-    <input type="file" id="thread-camera-input" accept="image/*" capture="environment" style="display:none;">
-    <input type="text" id="thread-input" placeholder="Type a message...">
-    <span id="tt-voice-btn" style="font-size:19px; cursor:pointer; flex-shrink:0;">🎤</span>
-    <button id="thread-send">➤</button>
+  <div class="thread-bottom-wrap">
+    <div class="thread-input-bar">
+      <div class="thread-input-pill">
+        <span id="tt-qr-btn">⚡</span>
+        <span id="tt-photo-btn">🖼️</span>
+        <input type="text" id="thread-input" placeholder="Type a message...">
+      </div>
+      <input type="file" id="thread-photo-input" accept="image/*" style="display:none;">
+      <button class="round-btn" id="tt-voice-btn">🎤</button>
+      <button class="round-btn" id="thread-send">➤</button>
+    </div>
+    <div class="thread-toolbar">
+      <div class="tt-btn" id="tt-translate"><span class="tt-icon">🌐</span><span>Translate Chat</span></div>
+      <div class="tt-btn" id="tt-remedies"><span class="tt-icon">🙏</span><span>Suggest Remedies</span></div>
+      <div class="tt-btn" id="tt-kundli"><span class="tt-icon">📜</span><span>Kundli</span></div>
+      <div class="tt-btn" id="tt-history"><span class="tt-icon">🕘</span><span>Chat History</span></div>
+    </div>
   </div>
   </div>
 </div>
@@ -1435,9 +1446,7 @@
   }
 
   document.getElementById('tt-photo-btn').addEventListener('click', () => document.getElementById('thread-photo-input').click());
-  document.getElementById('tt-camera-btn').addEventListener('click', () => document.getElementById('thread-camera-input').click());
   document.getElementById('thread-photo-input').addEventListener('change', (e) => { compressAndSendPhoto(e.target.files[0]); e.target.value = ''; });
-  document.getElementById('thread-camera-input').addEventListener('change', (e) => { compressAndSendPhoto(e.target.files[0]); e.target.value = ''; });
 
   // ---- Voice message ----
   let mediaRecorder = null;
