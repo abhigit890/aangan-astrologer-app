@@ -503,7 +503,7 @@
 
   <div class="bottom-nav">
     <div class="nav-item active" id="nav-home"><div class="icon">🏠</div><div>Home</div></div>
-    <div class="nav-item"><div class="icon">📦</div><div class="count">4</div><div>Orders</div></div>
+    <div class="nav-item" id="nav-orders"><div class="icon">📦</div><div class="count" id="orders-count" style="display:none;">0</div><div>Orders</div></div>
     <div class="nav-item"><div class="icon">🔴</div><div>Live</div></div>
     <div class="nav-item"><div class="icon">👛</div><div>Wallet</div></div>
     <div class="nav-item" id="nav-account"><div class="icon">👤</div><div>Account</div></div>
@@ -601,6 +601,15 @@
   </div>
   <div id="pick-performer-list" style="padding:70px 18px 100px;"></div>
   <button id="perform-yourself-btn" style="position:fixed; bottom:0; left:0; right:0; max-width:480px; margin:0 auto; padding:16px; border:none; border-top:1px solid var(--line); background:var(--gold); color:#2E1D0C; font-weight:700; font-size:15px; cursor:pointer;">Perform Yourself</button>
+</div>
+
+<!-- ORDERS (WAITING LIST) -->
+<div class="sub-screen" id="screen-orders">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">Orders</span>
+  </div>
+  <div id="orders-body" style="padding:70px 18px 40px;"></div>
 </div>
 
 <!-- REMEDY BOOKINGS -->
@@ -838,6 +847,7 @@
       document.getElementById('header-uid').textContent = 'ID: ' + user.uid.slice(0,8);
       window.currentUid = user.uid;
       startRequestListener(user.uid);
+      startOrdersCountListener(user.uid);
       startRemedyCallListener(user.uid);
     } else {
       loginCard.style.display = 'block';
@@ -1027,6 +1037,7 @@
     window.currentChatId = chatId;
     window.currentChatUserName = userName;
     document.getElementById('thread-username').textContent = userName;
+    updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: true }).catch(()=>{});
     const body = document.getElementById('thread-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -1199,6 +1210,7 @@
     });
     window.currentChatId = null;
     window.currentChatUserName = null;
+    await updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: false }).catch(()=>{});
   });
 
   document.getElementById('thread-send').addEventListener('click', sendAstroMessage);
@@ -1634,6 +1646,7 @@
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.getElementById('nav-home').classList.add('active');
     showScreen('dashboard');
+    updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: false }).catch(()=>{});
   });
 
   document.getElementById('nav-account').addEventListener('click', () => {
@@ -1996,6 +2009,7 @@
     activeCallOrderId = orderId;
     activeCallStartedAt = Date.now();
     updateDoc(doc(db, 'remedyOrders', orderId), { callStatus: 'live' }).catch(()=>{});
+    updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: true }).catch(()=>{});
 
     try {
       const tokenRes = await fetch(`${AGORA_BACKEND_URL}/api/agora-token`, {
@@ -2083,6 +2097,7 @@
     } catch (e) { /* ignore */ }
   });
   async function cleanupAndExitCall(isInitiator) {
+    updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: false }).catch(()=>{});
     try {
       if (localAudioTrack) { localAudioTrack.close(); localAudioTrack = null; }
       if (localVideoTrack) { localVideoTrack.close(); localVideoTrack = null; }
@@ -2995,40 +3010,107 @@
   }
 
   function startRequestListener(uid) {
+    // Watches requests we've picked from the queue, and finalizes them
+    // automatically once the user confirms on their end.
     const q = query(
       collection(db, 'requests'),
       where('astrologerId', '==', uid),
-      where('status', '==', 'pending')
+      where('queueStatus', '==', 'confirmed_by_user')
     );
     onSnapshot(q, (snap) => {
-      if (currentRequestId) return; // already showing one, ignore new ones for now
-      if (snap.empty) return;
-      const d = snap.docs[0];
-      const r = d.data();
-      currentRequestId = d.id;
-      currentRequestData = r;
-      const isCall = r.type === 'call' || r.type === 'video';
-      document.getElementById('req-type').textContent =
-        'Incoming ' + (r.type === 'call' ? 'Call' : r.type === 'video' ? 'Video Call' : 'Chat');
-      document.getElementById('req-name').textContent = r.userName || 'User';
-      document.getElementById('req-start-label').textContent = isCall ? 'Start Call' : 'Start Chat';
-      document.getElementById('req-decline').textContent = isCall ? 'Reject Call Request' : 'Reject Chat Request';
-      document.getElementById('req-avatar-emoji').style.display = 'flex';
-      document.getElementById('req-avatar-photo').style.display = 'none';
-      if (r.userId) {
-        getDoc(doc(db, 'users', r.userId)).then(uSnap => {
-          if (uSnap.exists() && uSnap.data().photoURL) {
-            document.getElementById('req-avatar-photo').src = uSnap.data().photoURL;
-            document.getElementById('req-avatar-photo').style.display = 'block';
-            document.getElementById('req-avatar-emoji').style.display = 'none';
-          }
-        }).catch(() => {});
-      }
-      document.getElementById('incoming-overlay').style.display = 'flex';
-      startRing();
-      startReqCountdown();
+      snap.forEach(d => {
+        if (d.id === window.__finalizingReqId) return; // already finalizing this one
+        window.__finalizingReqId = d.id;
+        finalizeQueuedRequest(d.id, d.data());
+      });
     });
   }
+
+  async function finalizeQueuedRequest(reqId, reqData) {
+    await updateDoc(doc(db, 'requests', reqId), { queueStatus: 'started' });
+    currentRequestId = reqId;
+    currentRequestData = reqData;
+    document.getElementById('req-accept').click();
+    const isCall = reqData && (reqData.type === 'call' || reqData.type === 'video');
+    alert(isCall ? 'This call has been started.' : 'This chat has been started.');
+  }
+
+  function startOrdersCountListener(uid) {
+    const q = query(collection(db, 'requests'), where('astrologerId', '==', uid), where('queueStatus', '==', 'waiting'));
+    onSnapshot(q, (snap) => {
+      const badge = document.getElementById('orders-count');
+      if (snap.size > 0) { badge.textContent = snap.size; badge.style.display = 'block'; }
+      else { badge.style.display = 'none'; }
+    });
+  }
+
+  document.getElementById('nav-orders').addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('nav-orders').classList.add('active');
+    loadOrdersScreen();
+  });
+
+  function loadOrdersScreen() {
+    showScreen('screen-orders');
+    const body = document.getElementById('orders-body');
+    body.innerHTML = '<div class="empty-state">Loading...</div>';
+
+    Promise.all([
+      getDocs(query(collection(db, 'chats'), where('astrologerId', '==', window.currentUid), where('status', '!=', 'ended'))),
+      getDocs(query(collection(db, 'requests'), where('astrologerId', '==', window.currentUid), where('queueStatus', '==', 'waiting')))
+    ]).then(([chatSnap, reqSnap]) => {
+      let html = '';
+
+      if (!chatSnap.empty) {
+        const c = chatSnap.docs[0].data();
+        const cid = chatSnap.docs[0].id;
+        html += `
+          <div class="booking-row" style="margin-bottom:18px;">
+            <div style="font-size:11px; color:var(--green); font-weight:700; margin-bottom:6px;">● ONGOING CHAT</div>
+            <div class="bname">${c.userName || 'User'}</div>
+            <button style="width:100%; margin-top:10px; padding:10px; border-radius:10px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; cursor:pointer;" onclick="openChatThread('${cid}', '${(c.userName||'User').replace(/'/g,"\\'")}')">Open Chat</button>
+          </div>
+        `;
+      }
+
+      html += `<div style="font-size:13px; font-weight:700; color:var(--gold-text); margin-bottom:10px;">Waiting List (${reqSnap.size})</div>`;
+
+      if (reqSnap.empty) {
+        html += '<div class="empty-state">No one is waiting right now.</div>';
+      } else {
+        const rows = [];
+        reqSnap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+        rows.sort((a, b) => {
+          const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+          const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+          return ta - tb;
+        });
+        html += rows.map((r, i) => {
+          const waitMin = r.createdAt?.toDate ? Math.max(0, Math.round((Date.now() - r.createdAt.toDate().getTime()) / 60000)) : 0;
+          return `
+            <div class="booking-row">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div class="bname">#${i+1} · ${r.userName || 'User'}</div>
+                  <div class="buser">${r.type === 'video' ? 'Video Call' : r.type === 'call' ? 'Audio Call' : 'Chat'} · waiting ${waitMin} min</div>
+                </div>
+                <button style="padding:9px 16px; border-radius:20px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; font-size:12.5px; cursor:pointer;" onclick="pickFromOrders('${r.id}')">Pick</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      body.innerHTML = html;
+    }).catch(err => {
+      body.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+    });
+  }
+
+  window.pickFromOrders = async function(reqId) {
+    await updateDoc(doc(db, 'requests', reqId), { queueStatus: 'picked' });
+    loadOrdersScreen();
+  };
 
   document.getElementById('req-accept').addEventListener('click', async () => {
     if (!currentRequestId) return;
