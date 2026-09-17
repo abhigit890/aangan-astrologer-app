@@ -1036,6 +1036,7 @@
     showScreen('screen-chat-thread');
     window.currentChatId = chatId;
     window.currentChatUserName = userName;
+    watchChatBalance(chatId);
     document.getElementById('thread-username').textContent = userName;
     updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: true }).catch(()=>{});
     const body = document.getElementById('thread-body');
@@ -1044,11 +1045,18 @@
     if (threadMsgUnsub) { threadMsgUnsub(); threadMsgUnsub = null; }
     if (threadStatusUnsub) { threadStatusUnsub(); threadStatusUnsub = null; }
 
-    threadStatusUnsub = onSnapshot(doc(db, 'chats', chatId), (chatSnap) => {
-      const ended = chatSnap.exists() && chatSnap.data().status === 'ended';
-      document.getElementById('thread-input').disabled = ended;
-      document.getElementById('thread-send').disabled = ended;
-      document.getElementById('end-chat-btn').style.display = ended ? 'none' : 'block';
+    threadStatusUnsub = onSnapshot(doc(db, 'chats', chatId), async (chatSnap) => {
+      const c=chatSnap.exists()?chatSnap.data():{};
+      const ended=c.status==='ended'; const active=c.status==='active';
+      document.getElementById('thread-input').disabled = !active;
+      document.getElementById('thread-send').disabled = !active;
+      document.getElementById('end-chat-btn').style.display = (active||c.status==='waiting_user_acceptance') ? 'block' : 'none';
+      document.getElementById('thread-input').placeholder = active ? 'Type a message...' : 'Waiting for user to accept...';
+      if(c.status==='user_accepted' || c.requestUserAccepted===true){
+        await updateDoc(doc(db,'chats',chatId),{status:'active',startedAt:c.startedAt||serverTimestamp()});
+        const ms=await getDocs(query(collection(db,'chats',chatId,'messages'),where('systemEvent','==','chat_started'),limit(1)));
+        if(ms.empty) await addDoc(collection(db,'chats',chatId,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
+      }
     });
 
     // Show the user's photo and estimated talk time (their wallet balance ÷ my price/min)
@@ -1186,10 +1194,19 @@
     }, 5000);
   }
 
+  let chatBalanceUnsub=null;
+  function watchChatBalance(chatId){
+    if(chatBalanceUnsub) chatBalanceUnsub();
+    chatBalanceUnsub=null;
+    getDoc(doc(db,'chats',chatId)).then(cs=>{const uid=cs.exists()?cs.data().userId:null;if(!uid)return;chatBalanceUnsub=onSnapshot(doc(db,'users',uid),async us=>{const c=(await getDoc(doc(db,'chats',chatId))).data()||{};if(c.status==='active' && us.exists() && (parseFloat(us.data().balance||0)||0)<=0){const name=(c.userName||'User');await updateDoc(doc(db,'chats',chatId),{status:'ended',endReason:'insufficient balance',endedByType:'system',endedByName:null,endedAt:serverTimestamp()});await addDoc(collection(db,'chats',chatId,'messages'),{text:'This chat has been ended due to insufficient balance.',senderType:'system',endReason:'insufficient balance',sentAt:serverTimestamp()});}});});
+  }
+
   async function sendAstroMessage() {
     const input = document.getElementById('thread-input');
     const text = input.value.trim();
     if (!text || !window.currentChatId) return;
+    const cs=await getDoc(doc(db,'chats',window.currentChatId));
+    if(!cs.exists() || cs.data().status!=='active') return;
     input.value = '';
     await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
       text, senderType: 'astrologer', senderId: window.currentUid, sentAt: serverTimestamp()
@@ -1202,12 +1219,11 @@
   document.getElementById('end-chat-btn').addEventListener('click', async () => {
     if (!window.currentChatId) return;
     if (!confirm('End this chat?')) return;
-    await updateDoc(doc(db, 'chats', window.currentChatId), {
-      status: 'ended', endedAt: serverTimestamp()
-    });
-    await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
-      text: 'This chat has been ended', senderType: 'system', sentAt: serverTimestamp()
-    });
+    const cid=window.currentChatId;
+    const mySnap=await getDoc(doc(db,'astrologers',window.currentUid));
+    const myName=(mySnap.exists()&&mySnap.data().name)||'Astrologer';
+    await updateDoc(doc(db,'chats',cid),{status:'ended',endReason:'astrologer',endedByType:'astrologer',endedByName:myName,endedAt:serverTimestamp()});
+    await addDoc(collection(db,'chats',cid,'messages'),{text:`This chat has been ended due to ${myName}.`,senderType:'system',endReason:'astrologer',sentAt:serverTimestamp()});
     window.currentChatId = null;
     window.currentChatUserName = null;
     await updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: false }).catch(()=>{});
@@ -1999,36 +2015,6 @@
   let activeCallDocUnsub = null;
   let activeCallStartedAt = null;
 
-  // User-requested "टर-टर" call tone on the astrologer side.
-  let generalCallTarTarInterval = null;
-  let generalCallTarTarCtx = null;
-  function startGeneralCallTarTar() {
-    if (generalCallTarTarInterval) return;
-    generalCallTarTarCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const play = () => {
-      if (!generalCallTarTarCtx) return;
-      [430, 540].forEach(freq => {
-        const osc = generalCallTarTarCtx.createOscillator();
-        const gain = generalCallTarTarCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.001, generalCallTarTarCtx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.08, generalCallTarTarCtx.currentTime + 0.03);
-        gain.gain.setValueAtTime(0.08, generalCallTarTarCtx.currentTime + 0.42);
-        gain.gain.linearRampToValueAtTime(0.001, generalCallTarTarCtx.currentTime + 0.48);
-        osc.connect(gain).connect(generalCallTarTarCtx.destination);
-        osc.start();
-        osc.stop(generalCallTarTarCtx.currentTime + 0.5);
-      });
-    };
-    play();
-    generalCallTarTarInterval = setInterval(play, 1800);
-  }
-  function stopGeneralCallTarTar() {
-    if (generalCallTarTarInterval) { clearInterval(generalCallTarTarInterval); generalCallTarTarInterval = null; }
-    if (generalCallTarTarCtx) { generalCallTarTarCtx.close(); generalCallTarTarCtx = null; }
-  }
-
   window.startRemedyCall = async function(orderId, isVideo) {
     showScreen('screen-videocall');
     document.getElementById('vc-status').textContent = 'Connecting...';
@@ -2040,7 +2026,6 @@
     activeCallStartedAt = Date.now();
     updateDoc(doc(db, 'remedyOrders', orderId), { callStatus: 'live' }).catch(()=>{});
     updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: true }).catch(()=>{});
-    if (window.isGeneralCall) startGeneralCallTarTar();
 
     try {
       const tokenRes = await fetch(`${AGORA_BACKEND_URL}/api/agora-token`, {
@@ -2128,7 +2113,6 @@
     } catch (e) { /* ignore */ }
   });
   async function cleanupAndExitCall(isInitiator) {
-    stopGeneralCallTarTar();
     updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: false }).catch(()=>{});
     try {
       if (localAudioTrack) { localAudioTrack.close(); localAudioTrack = null; }
@@ -3042,109 +3026,29 @@
   }
 
   function startRequestListener(uid) {
-    // Shared request state machine:
-    // waiting -> astrologer_accepted -> user_accepted -> live/accepted
-    const q = query(collection(db, 'requests'), where('astrologerId', '==', uid));
-    onSnapshot(q, (snap) => {
-      if (currentRequestId) return;
-
-      let incoming = null;
-      snap.forEach(d => {
-        const r = d.data();
-        if (!incoming && r && r.status === 'pending' &&
-            (r.queueStatus === 'waiting' || r.queueStatus === 'picked')) {
-          incoming = { id: d.id, data: r };
-        }
-      });
-
-      if (incoming) {
-        currentRequestId = incoming.id;
-        currentRequestData = incoming.data;
-        const r = incoming.data;
-        const typeText = r.type === 'video' ? 'Incoming Video Call' :
-                         r.type === 'call' ? 'Incoming Audio Call' : 'Incoming Chat';
-        document.getElementById('req-type').textContent = typeText;
-        document.getElementById('req-name').textContent = r.userName || 'User';
-        document.getElementById('req-start-label').textContent = r.type === 'chat' ? 'Start Chat' : 'Start Call';
-
-        const overlay = document.getElementById('incoming-overlay');
-        overlay.style.display = 'flex';
-        startRing();
-        startReqCountdown();
-        return;
+    // Watches requests we've picked from the queue, and finalizes them
+    // automatically once the user confirms on their end.
+    const q = query(collection(db,'requests'),where('astrologerId','==',uid),where('queueStatus','==','user_accepted'));
+    onSnapshot(q, async (snap)=>{
+      for(const d of snap.docs){
+        const cRef=doc(db,'chats',d.id);
+        const c=await getDoc(cRef);
+        if(!c.exists()) continue;
+        await updateDoc(cRef,{status:'active',requestUserAccepted:true,startedAt:serverTimestamp()});
+        const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_started'),limit(1)));
+        if(ms.empty) await addDoc(collection(db,'chats',d.id,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
+        if(window.currentChatId!==d.id) openChatThread(d.id,d.data().userName||'User');
       }
-
-      // After the astrologer accepted, wait here until the user accepts.
-      snap.forEach(d => {
-        const r = d.data();
-        if (!r || r.queueStatus !== 'user_accepted' || r.status !== 'accepted') return;
-        if (window.__startedRequestId === d.id) return;
-        window.__startedRequestId = d.id;
-        startAcceptedRequest(d.id, r);
-      });
     });
   }
 
-  async function startAcceptedRequest(reqId, reqData) {
-    const type = reqData?.type || 'chat';
+  async function finalizeQueuedRequest(reqId, reqData) {
+    await updateDoc(doc(db, 'requests', reqId), { queueStatus: 'started' });
     currentRequestId = reqId;
     currentRequestData = reqData;
-    await updateDoc(doc(db, 'requests', reqId), {
-      queueStatus: 'started',
-      startedAt: serverTimestamp()
-    });
-
-    if (type === 'chat') {
-      await setDoc(doc(db, 'chats', reqId), {
-        astrologerId: window.currentUid,
-        userId: reqData.userId || null,
-        userName: reqData.userName || 'User',
-        lastMessage: '',
-        lastMessageAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-        selfDetails: reqData.selfDetails || null
-      }, { merge: true });
-
-      if (reqData.selfDetails) {
-        const s = reqData.selfDetails;
-        const sDob = s.dobDisplay || s.dob || '-';
-        const sTob = s.tobDisplay || s.tob || '-';
-        let detailsText = `Name: ${s.name || '-'}\nGender: ${s.gender || '-'}\nDOB: ${sDob}\nTOB: ${sTob}\nPOB: ${s.pob || '-'}`;
-        if (reqData.partnerDetails) {
-          const p = reqData.partnerDetails;
-          const pDob = p.dobDisplay || p.dob || '-';
-          const pTob = p.tobDisplay || p.tob || '-';
-          detailsText += `\n\nPartner Details\nName: ${p.name || '-'}\nGender: ${p.gender || '-'}\nDOB: ${pDob}\nTOB: ${pTob}\nPOB: ${p.pob || '-'}`;
-        }
-        await addDoc(collection(db, 'chats', reqId, 'messages'), {
-          text: detailsText, senderType: 'user', senderId: reqData.userId || null, sentAt: serverTimestamp()
-        });
-      }
-
-      await addDoc(collection(db, 'chats', reqId, 'messages'), {
-        text: 'This chat has been started.',
-        senderType: 'system',
-        sentAt: serverTimestamp()
-      });
-
-      await addDoc(collection(db, 'chats', reqId, 'messages'), {
-        text: 'Welcome to Aangan. Your astrologer will take a minute to analyse your details. You may ask your question in the meantime.',
-        senderType: 'system',
-        sentAt: serverTimestamp()
-      });
-
-      openChatThread(reqId, reqData.userName || 'User');
-    } else {
-      window.isGeneralCall = true;
-      window.currentGeneralCallUserId = reqData.userId || null;
-      window.currentGeneralCallUserName = reqData.userName || 'User';
-      window.currentGeneralCallType = type;
-      window.currentGeneralCallSelfDetails = reqData.selfDetails || null;
-      await startRemedyCall(reqId, type === 'video');
-    }
-
-    currentRequestId = null;
-    currentRequestData = null;
+    document.getElementById('req-accept').click();
+    const isCall = reqData && (reqData.type === 'call' || reqData.type === 'video');
+    alert(isCall ? 'This call has been started.' : 'This chat has been started.');
   }
 
   function startOrdersCountListener(uid) {
@@ -3220,25 +3124,26 @@
   }
 
   window.pickFromOrders = async function(reqId) {
-    await updateDoc(doc(db, 'requests', reqId), { queueStatus: 'picked' });
-    loadOrdersScreen();
+    const reqSnap=await getDoc(doc(db,'requests',reqId));
+    if(!reqSnap.exists()) return;
+    const r=reqSnap.data();
+    if(r.type !== 'chat'){ await updateDoc(doc(db,'requests',reqId),{queueStatus:'picked'}); loadOrdersScreen(); return; }
+    await setDoc(doc(db,'chats',reqId),{astrologerId:window.currentUid,userId:r.userId||null,userName:r.userName||'User',status:'waiting_user_acceptance',createdAt:serverTimestamp(),lastMessage:'',lastMessageAt:serverTimestamp(),selfDetails:r.selfDetails||null},{merge:true});
+    await updateDoc(doc(db,'requests',reqId),{queueStatus:'astrologer_accepted',astrologerAcceptedAt:serverTimestamp()});
+    window.currentChatId=reqId; window.currentChatUserName=r.userName||'User';
+    openChatThread(reqId,r.userName||'User');
   };
 
   document.getElementById('req-accept').addEventListener('click', async () => {
     if (!currentRequestId) return;
-    stopRing();
-    stopReqCountdown();
-    document.getElementById('incoming-overlay').style.display = 'none';
-
-    const reqId = currentRequestId;
-    await updateDoc(doc(db, 'requests', reqId), {
-      queueStatus: 'astrologer_accepted',
-      astrologerAcceptedAt: serverTimestamp()
-    });
-
-    // IMPORTANT: do not enter chat/call yet. The user must accept on their side.
-    currentRequestId = null;
-    currentRequestData = null;
+    stopRing(); stopReqCountdown(); document.getElementById('incoming-overlay').style.display='none';
+    const reqId=currentRequestId, reqData=currentRequestData;
+    if(reqData && reqData.type==='chat'){
+      await setDoc(doc(db,'chats',reqId),{astrologerId:window.currentUid,userId:reqData.userId||null,userName:reqData.userName||'User',status:'waiting_user_acceptance',createdAt:serverTimestamp(),lastMessage:'',lastMessageAt:serverTimestamp(),selfDetails:reqData.selfDetails||null},{merge:true});
+      await updateDoc(doc(db,'requests',reqId),{queueStatus:'astrologer_accepted',astrologerAcceptedAt:serverTimestamp()});
+      openChatThread(reqId,reqData.userName||'User');
+    }
+    currentRequestId=null; currentRequestData=null;
   });
 
   document.getElementById('req-decline').addEventListener('click', async () => {
@@ -3248,7 +3153,6 @@
     document.getElementById('incoming-overlay').style.display = 'none';
     await updateDoc(doc(db, 'requests', currentRequestId), {
       status: 'declined',
-      queueStatus: 'declined',
       declinedAt: serverTimestamp()
     });
     currentRequestId = null;
