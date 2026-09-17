@@ -915,47 +915,77 @@
         return;
       }
       body.innerHTML = '';
-      snap.forEach(d => {
-        const c = d.data();
+
+      // Figure out which chats are a user's first ever vs a repeat, across this whole list
+      const rows = [];
+      snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+      const firstChatIdByUser = {};
+      rows.slice().sort((a, b) => {
+        const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+        const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+        return ta - tb;
+      }).forEach(c => {
+        if (c.userId && !firstChatIdByUser[c.userId]) firstChatIdByUser[c.userId] = c.id;
+      });
+
+      rows.forEach(c => {
         const row = document.createElement('div');
         row.className = 'booking-row';
-        row.style.cursor = 'pointer';
 
         const s = c.selfDetails || {};
         const dob = s.dobDisplay || s.dob || '';
         const tob = s.tobDisplay || s.tob || '';
         const pob = s.pob || '';
+        const isNew = c.userId && firstChatIdByUser[c.userId] === c.id;
 
         const isEnded = c.status === 'ended';
         let durationText = 'Ongoing';
-        let earnedText = '';
+        let earnedText = '₹0.00';
         if (isEnded && c.createdAt?.toDate && c.endedAt?.toDate) {
           const mins = Math.max(1, Math.round((c.endedAt.toDate() - c.createdAt.toDate()) / 60000));
           const startT = c.createdAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
           const endT = c.endedAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'});
           durationText = `${mins} min (${startT} – ${endT})`;
-          const earned = mins * ratePerMin * 0.5;
-          earnedText = `₹${earned.toFixed(2)}`;
+          earnedText = `₹${(mins * ratePerMin * 0.5).toFixed(2)}`;
         }
-        const dateText = c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '';
+        const dateText = c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString('en-IN', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+        const bookingId = 'AG-' + c.id.slice(0, 6).toUpperCase();
 
         row.innerHTML = `
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-            <div>
-              <div class="bname">${c.userName || 'User'}${s.name ? ' (' + s.name + ')' : ''}</div>
-              <div class="buser">${dateText}</div>
-            </div>
-            <div style="text-align:right;">
-              ${earnedText ? `<div style="font-family:'Cinzel',serif; font-weight:700; color:var(--gold-text); font-size:14px;">${earnedText}</div>` : ''}
-              <span class="bstatus" style="color:${isEnded ? 'var(--green)' : 'var(--gold-text)'};">${isEnded ? 'Completed' : 'Ongoing'}</span>
-            </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--line);">
+            <span style="font-size:12px; font-weight:700; color:${isNew ? '#5FA8D3' : 'var(--gold-text)'};">${isNew ? 'New' : 'Repeat'}</span>
+            <span style="width:1px; height:12px; background:var(--line);"></span>
+            <span style="font-size:12px; font-weight:700; color:${isEnded ? 'var(--green)' : 'var(--gold-text)'};">${isEnded ? 'Completed ✓' : 'Ongoing'}</span>
+            <span style="flex:1;"></span>
+            <span style="font-family:'Cinzel',serif; font-weight:700; color:var(--gold-text); font-size:14px;">${earnedText}</span>
           </div>
-          ${dob ? `<div style="font-size:12px; color:var(--dim); margin-bottom:2px;">DOB: ${dob}${tob ? ', ' + tob : ''}</div>` : ''}
-          ${pob ? `<div style="font-size:12px; color:var(--dim); margin-bottom:2px;">POB: ${pob}</div>` : ''}
-          <div style="font-size:12px; color:var(--dim);">Duration: ${durationText}</div>
-          <div style="font-size:11.5px; color:var(--dim); margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">"${c.lastMessage || ''}"</div>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <span style="font-size:18px;">🔮</span>
+            <span class="bname">Aangan (#${bookingId})</span>
+          </div>
+          <div class="buser" style="margin-bottom:10px;">${dateText}</div>
+          <div style="font-size:12.5px; color:var(--ink); line-height:1.9;">
+            <div><b>Name:</b> ${c.userName || 'User'}${s.name ? ' (' + s.name + ')' : ''}</div>
+            ${dob ? `<div><b>DOB:</b> ${dob}${tob ? ', ' + tob : ''}</div>` : ''}
+            <div><b>Rate:</b> ₹${ratePerMin}/min</div>
+            ${pob ? `<div><b>POB:</b> ${pob}</div>` : ''}
+            <div><b>Duration:</b> ${durationText}</div>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <button style="flex:1; padding:9px 4px; border-radius:9px; border:1px solid var(--gold); background:transparent; color:var(--gold-text); font-size:11.5px; font-weight:600; cursor:pointer;" data-action="remedy">Suggest Remedy</button>
+            <button style="flex:1; padding:9px 4px; border-radius:9px; border:1px solid var(--gold); background:transparent; color:var(--gold-text); font-size:11.5px; font-weight:600; cursor:pointer;" data-action="kundli">Open Kundli</button>
+            <button style="flex:1; padding:9px 4px; border-radius:9px; border:1px solid var(--gold); background:transparent; color:var(--gold-text); font-size:11.5px; font-weight:600; cursor:pointer;" data-action="chat">Open Chat</button>
+          </div>
         `;
-        row.addEventListener('click', () => openChatThread(d.id, c.userName || 'User'));
+        row.querySelector('[data-action="chat"]').addEventListener('click', () => openChatThread(c.id, c.userName || 'User'));
+        row.querySelector('[data-action="kundli"]').addEventListener('click', () => {
+          openChatThread(c.id, c.userName || 'User');
+          setTimeout(() => document.getElementById('tt-kundli').click(), 300);
+        });
+        row.querySelector('[data-action="remedy"]').addEventListener('click', () => {
+          openChatThread(c.id, c.userName || 'User');
+          setTimeout(() => document.getElementById('tt-remedies').click(), 300);
+        });
         body.appendChild(row);
       });
     }, (err) => {
@@ -1314,7 +1344,7 @@
       const res = await fetch(LIBRETRANSLATE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ q: text, source: 'auto', target: 'hi', format: 'text' })
+        body: JSON.stringify({ q: text, source: 'auto', target: window.translateTargetLang || 'hi', format: 'text' })
       });
       const data = await res.json();
       translationCache[msgId] = data.translatedText || null;
@@ -1324,12 +1354,39 @@
     }
   }
 
+  window.translateTargetLang = null; // e.g. 'hi', 'en', 'ta', 'te', 'kn'
+  const LANG_OPTIONS = [
+    { code: 'hi', label: 'Hindi' },
+    { code: 'en', label: 'English' },
+    { code: 'ta', label: 'Tamil' },
+    { code: 'te', label: 'Telugu' },
+    { code: 'kn', label: 'Kannada' }
+  ];
+
   document.getElementById('tt-translate').addEventListener('click', () => {
-    window.translateModeOn = !window.translateModeOn;
+    const listEl = document.getElementById('lang-picker-list');
+    listEl.innerHTML = LANG_OPTIONS.map(l => `
+      <div style="padding:12px 14px; margin-bottom:8px; border-radius:10px; border:1px solid var(--line); cursor:pointer; font-size:14px; ${window.translateModeOn && window.translateTargetLang === l.code ? 'background:var(--gold); color:#2E1D0C; font-weight:700;' : ''}" onclick="selectTranslateLang('${l.code}')">${l.label}</div>
+    `).join('') + (window.translateModeOn ? `<div style="padding:12px 14px; margin-top:4px; border-radius:10px; border:1px solid var(--rose); color:var(--rose); cursor:pointer; font-size:13px; text-align:center;" onclick="selectTranslateLang(null)">Turn off translation</div>` : '');
+    document.getElementById('lang-picker-overlay').classList.add('show');
+  });
+
+  window.closeLangPicker = function() { document.getElementById('lang-picker-overlay').classList.remove('show'); };
+
+  window.selectTranslateLang = function(code) {
+    if (code) {
+      window.translateModeOn = true;
+      window.translateTargetLang = code;
+      Object.keys(translationCache).forEach(k => delete translationCache[k]); // re-translate to new language
+    } else {
+      window.translateModeOn = false;
+      window.translateTargetLang = null;
+    }
     document.getElementById('tt-translate').style.opacity = window.translateModeOn ? '1' : '0.55';
     document.getElementById('tt-translate').querySelector('.tt-icon').textContent = window.translateModeOn ? '🌐✓' : '🌐';
+    closeLangPicker();
     if (window.currentChatId) openChatThread(window.currentChatId, window.currentChatUserName);
-  });
+  };
 
   // ---- Chat History with this user ----
   document.getElementById('tt-history').addEventListener('click', async () => {
@@ -3011,6 +3068,17 @@
     currentRequestData = null;
   });
 </script>
+
+<!-- LANGUAGE PICKER OVERLAY -->
+<div id="lang-picker-overlay" class="modal-overlay">
+  <div class="modal-box">
+    <h2 class="modal-title">Which language do you want to translate to?</h2>
+    <div id="lang-picker-list"></div>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button style="flex:1; background:transparent; border:1px solid var(--line); color:var(--ink);" onclick="closeLangPicker()">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <!-- QUICK REPLIES OVERLAY -->
 <div id="qr-overlay" class="modal-overlay">
