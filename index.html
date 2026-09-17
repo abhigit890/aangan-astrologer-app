@@ -788,7 +788,7 @@
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
     getFirestore, doc, setDoc, updateDoc, serverTimestamp, getDoc, addDoc,
-    collection, query, where, orderBy, onSnapshot, getDocs, limit, runTransaction, increment
+    collection, query, where, orderBy, onSnapshot, getDocs, limit, runTransaction, increment, arrayUnion
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -996,6 +996,32 @@
   let threadMsgUnsub = null;
   let threadStatusUnsub = null;
 
+  // ---- Long-press to delete a message ----
+  function attachLongPress(el, callback) {
+    let timer;
+    const start = () => { timer = setTimeout(callback, 550); };
+    const cancel = () => clearTimeout(timer);
+    el.addEventListener('touchstart', start);
+    el.addEventListener('touchend', cancel);
+    el.addEventListener('touchmove', cancel);
+    el.addEventListener('mousedown', start);
+    el.addEventListener('mouseup', cancel);
+    el.addEventListener('mouseleave', cancel);
+  }
+
+  async function handleMessageLongPress(chatCollectionPath, msgId, m) {
+    if (!confirm('Delete this message?')) return;
+    const isMine = m.senderType === 'astrologer';
+    const sentMs = m.sentAt?.toDate ? m.sentAt.toDate().getTime() : 0;
+    const withinFiveMin = sentMs && (Date.now() - sentMs) <= 5 * 60 * 1000;
+    const msgRef = doc(db, ...chatCollectionPath, msgId);
+    if (isMine && withinFiveMin) {
+      await updateDoc(msgRef, { deletedForEveryone: true });
+    } else {
+      await updateDoc(msgRef, { deletedFor: arrayUnion(window.currentUid) });
+    }
+  }
+
   function openChatThread(chatId, userName) {
     showScreen('screen-chat-thread');
     window.currentChatId = chatId;
@@ -1051,7 +1077,16 @@
       body.innerHTML = '';
       snap.forEach(d => {
         const m = d.data();
+        if (m.deletedFor && m.deletedFor.includes(window.currentUid)) return; // hidden for me only
         const bubble = document.createElement('div');
+        if (m.deletedForEveryone) {
+          bubble.className = 'bubble ' + (m.senderType === 'astrologer' ? 'from-astro' : 'from-user');
+          bubble.style.opacity = '0.6';
+          bubble.style.fontStyle = 'italic';
+          bubble.textContent = 'This message was deleted';
+          body.appendChild(bubble);
+          return;
+        }
         if (m.senderType === 'remedy') {
           bubble.className = 'bubble from-astro';
           bubble.style.maxWidth = '85%';
@@ -1066,6 +1101,9 @@
         }
         const cls = m.senderType === 'astrologer' ? 'from-astro' : m.senderType === 'system' ? 'from-system' : 'from-user';
         bubble.className = 'bubble ' + cls;
+        if (cls !== 'from-system') {
+          attachLongPress(bubble, () => handleMessageLongPress(['chats', chatId, 'messages'], d.id, m));
+        }
         const time = m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
         let ticks = '';
         if (m.senderType === 'astrologer') {
