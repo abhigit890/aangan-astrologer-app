@@ -2972,8 +2972,13 @@
   // ---- Ring sound (Web Audio, no external file needed) ----
   let ringInterval = null;
   function startRing() {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if(!AudioCtx) return;
+    const ctx = (window.__ringCtx && window.__ringCtx.state !== 'closed')
+      ? window.__ringCtx
+      : new AudioCtx();
     window.__ringCtx = ctx;
+    if(ctx.state === 'suspended') ctx.resume().catch(()=>{});
     function playRingBurst() {
       // Classic dual-tone phone ring (two tones together), ~2s on
       [480, 620].forEach(freq => {
@@ -3026,19 +3031,49 @@
   }
 
   function startRequestListener(uid) {
-    // Watches requests we've picked from the queue, and finalizes them
-    // automatically once the user confirms on their end.
-    const q = query(collection(db,'requests'),where('astrologerId','==',uid),where('queueStatus','==','user_accepted'));
-    onSnapshot(q, async (snap)=>{
-      for(const d of snap.docs){
-        const cRef=doc(db,'chats',d.id);
-        const c=await getDoc(cRef);
-        if(!c.exists()) continue;
-        await updateDoc(cRef,{status:'active',requestUserAccepted:true,startedAt:serverTimestamp()});
-        const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_started'),limit(1)));
-        if(ms.empty) await addDoc(collection(db,'chats',d.id,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
-        if(window.currentChatId!==d.id) openChatThread(d.id,d.data().userName||'User');
+    // Watches all requests for this astrologer and handles waiting CHAT requests.
+    // We intentionally use only one Firestore where() here and filter the rest
+    // in JavaScript so no composite Firestore index is required.
+    const q = query(collection(db,'requests'), where('astrologerId','==',uid));
+    onSnapshot(q, (snap)=>{
+      const waitingChats = snap.docs
+        .map(d => ({id:d.id, data:d.data()}))
+        .filter(x => x.data.queueStatus === 'waiting' && x.data.type === 'chat')
+        .sort((a,b)=>{
+          const ta = a.data.createdAt?.toDate ? a.data.createdAt.toDate().getTime() : 0;
+          const tb = b.data.createdAt?.toDate ? b.data.createdAt.toDate().getTime() : 0;
+          return ta - tb;
+        });
+
+      // If the currently shown request is no longer waiting, close the popup.
+      if(currentRequestId){
+        const stillWaiting = waitingChats.some(x => x.id === currentRequestId);
+        if(!stillWaiting){
+          stopRing();
+          stopReqCountdown();
+          document.getElementById('incoming-overlay').style.display='none';
+          currentRequestId=null;
+          currentRequestData=null;
+        }
       }
+
+      // Show the oldest waiting chat request.
+      if(!currentRequestId && waitingChats.length){
+        const item = waitingChats[0];
+        currentRequestId = item.id;
+        currentRequestData = item.data;
+
+        document.getElementById('req-type').textContent = 'Incoming Chat';
+        document.getElementById('req-name').textContent = item.data.userName || 'User';
+        document.getElementById('req-start-label').textContent = 'Start Chat';
+        document.getElementById('incoming-overlay').style.display='flex';
+
+        // Ring continuously until Start Chat / Reject / timeout.
+        startRing();
+        startReqCountdown();
+      }
+    }, (err)=>{
+      console.error('Chat request listener error:', err);
     });
   }
 
@@ -3052,12 +3087,14 @@
   }
 
   function startOrdersCountListener(uid) {
-    const q = query(collection(db, 'requests'), where('astrologerId', '==', uid), where('queueStatus', '==', 'waiting'));
+    // Single-field query; filter queueStatus locally to avoid a composite index.
+    const q = query(collection(db, 'requests'), where('astrologerId', '==', uid));
     onSnapshot(q, (snap) => {
+      const count = snap.docs.filter(d => d.data().queueStatus === 'waiting').length;
       const badge = document.getElementById('orders-count');
-      if (snap.size > 0) { badge.textContent = snap.size; badge.style.display = 'block'; }
+      if (count > 0) { badge.textContent = count; badge.style.display = 'block'; }
       else { badge.style.display = 'none'; }
-    });
+    }, (err) => console.error('Orders count listener error:', err));
   }
 
   document.getElementById('nav-orders').addEventListener('click', () => {
@@ -3072,14 +3109,17 @@
     body.innerHTML = '<div class="empty-state">Loading...</div>';
 
     Promise.all([
-      getDocs(query(collection(db, 'chats'), where('astrologerId', '==', window.currentUid), where('status', '!=', 'ended'))),
-      getDocs(query(collection(db, 'requests'), where('astrologerId', '==', window.currentUid), where('queueStatus', '==', 'waiting')))
-    ]).then(([chatSnap, reqSnap]) => {
+      // Single-field queries only; filter the second field locally.
+      getDocs(query(collection(db, 'chats'), where('astrologerId', '==', window.currentUid))),
+      getDocs(query(collection(db, 'requests'), where('astrologerId', '==', window.currentUid)))
+    ]).then(([chatSnap, reqSnapAll]) => {
+      const activeChatDocs = chatSnap.docs.filter(d => d.data().status !== 'ended');
+      const reqDocs = reqSnapAll.docs.filter(d => d.data().queueStatus === 'waiting');
       let html = '';
 
-      if (!chatSnap.empty) {
-        const c = chatSnap.docs[0].data();
-        const cid = chatSnap.docs[0].id;
+      if (activeChatDocs.length) {
+        const c = activeChatDocs[0].data();
+        const cid = activeChatDocs[0].id;
         html += `
           <div class="booking-row" style="margin-bottom:18px;">
             <div style="font-size:11px; color:var(--green); font-weight:700; margin-bottom:6px;">● ONGOING CHAT</div>
@@ -3089,13 +3129,13 @@
         `;
       }
 
-      html += `<div style="font-size:13px; font-weight:700; color:var(--gold-text); margin-bottom:10px;">Waiting List (${reqSnap.size})</div>`;
+      html += `<div style="font-size:13px; font-weight:700; color:var(--gold-text); margin-bottom:10px;">Waiting List (${reqDocs.length})</div>`;
 
-      if (reqSnap.empty) {
+      if (reqDocs.length === 0) {
         html += '<div class="empty-state">No one is waiting right now.</div>';
       } else {
         const rows = [];
-        reqSnap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+        reqDocs.forEach(d => rows.push({ id: d.id, ...d.data() }));
         rows.sort((a, b) => {
           const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
           const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
@@ -3110,7 +3150,12 @@
                   <div class="bname">#${i+1} · ${r.userName || 'User'}</div>
                   <div class="buser">${r.type === 'video' ? 'Video Call' : r.type === 'call' ? 'Audio Call' : 'Chat'} · waiting ${waitMin} min</div>
                 </div>
-                <button style="padding:9px 16px; border-radius:20px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; font-size:12.5px; cursor:pointer;" onclick="pickFromOrders('${r.id}')">Pick</button>
+                ${r.type === 'chat'
+                  ? `<div style="display:flex; gap:6px;">
+                       <button style="padding:9px 12px; border-radius:20px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; font-size:12px; cursor:pointer;" onclick="pickFromOrders('${r.id}')">Start Chat</button>
+                       <button style="padding:9px 10px; border-radius:20px; border:1px solid #E08AA8; background:transparent; color:#B14E72; font-weight:700; font-size:12px; cursor:pointer;" onclick="rejectFromOrders('${r.id}')">Reject</button>
+                     </div>`
+                  : `<button style="padding:9px 16px; border-radius:20px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; font-size:12.5px; cursor:pointer;" onclick="pickFromOrders('${r.id}')">Pick</button>`}
               </div>
             </div>
           `;
@@ -3134,6 +3179,27 @@
     openChatThread(reqId,r.userName||'User');
   };
 
+  window.rejectFromOrders = async function(reqId) {
+    try {
+      await updateDoc(doc(db,'requests',reqId), {
+        status:'declined',
+        queueStatus:'declined',
+        declinedBy:'astrologer',
+        declinedAt:serverTimestamp()
+      });
+      if(currentRequestId === reqId){
+        stopRing();
+        stopReqCountdown();
+        document.getElementById('incoming-overlay').style.display='none';
+        currentRequestId=null;
+        currentRequestData=null;
+      }
+      loadOrdersScreen();
+    } catch(e) {
+      alert('Unable to reject request: ' + e.message);
+    }
+  };
+
   document.getElementById('req-accept').addEventListener('click', async () => {
     if (!currentRequestId) return;
     stopRing(); stopReqCountdown(); document.getElementById('incoming-overlay').style.display='none';
@@ -3153,6 +3219,8 @@
     document.getElementById('incoming-overlay').style.display = 'none';
     await updateDoc(doc(db, 'requests', currentRequestId), {
       status: 'declined',
+      queueStatus: 'declined',
+      declinedBy: 'astrologer',
       declinedAt: serverTimestamp()
     });
     currentRequestId = null;
