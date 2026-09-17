@@ -1057,6 +1057,12 @@
         const ms=await getDocs(query(collection(db,'chats',chatId,'messages'),where('systemEvent','==','chat_started'),limit(1)));
         if(ms.empty) await addDoc(collection(db,'chats',chatId,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
       }
+      if(c.status==='ended' && c.endReason==='user_cancelled'){
+        document.getElementById('thread-input').disabled=true;
+        document.getElementById('thread-send').disabled=true;
+        document.getElementById('end-chat-btn').style.display='none';
+        document.getElementById('thread-input').placeholder='Chat Cancelled';
+      }
     });
 
     // Show the user's photo and estimated talk time (their wallet balance ÷ my price/min)
@@ -3030,51 +3036,146 @@
     if (reqCountdownInterval) { clearInterval(reqCountdownInterval); reqCountdownInterval = null; }
   }
 
+  // ---- Chat request queue listener ----
+  // Only one Firestore where() is used; the remaining queue/status checks are
+  // done locally so this flow does not require a composite index.
+  let nextRequestTimer = null;
+  let nextRequestReadyAt = 0;
+  let lastIncomingRequestId = null;
+
+  function scheduleNextWaitingRequest(delayMs = 5000) {
+    if (nextRequestTimer) clearTimeout(nextRequestTimer);
+    nextRequestReadyAt = Date.now() + delayMs;
+    nextRequestTimer = setTimeout(() => {
+      nextRequestTimer = null;
+      showNextWaitingRequest();
+    }, delayMs);
+  }
+
+  async function showNextWaitingRequest() {
+    if (!window.currentUid || window.currentChatId) return;
+    if (Date.now() < nextRequestReadyAt) return;
+    const overlay = document.getElementById('incoming-overlay');
+    if (overlay && overlay.style.display === 'flex') return;
+
+    try {
+      const snap = await getDocs(query(collection(db,'requests'), where('astrologerId','==',window.currentUid)));
+      const waiting = [];
+      snap.forEach(d => {
+        const r=d.data()||{};
+        if(r.type==='chat' && r.queueStatus==='waiting' && r.status!=='ended' && r.status!=='declined') {
+          waiting.push({id:d.id,...r});
+        }
+      });
+      waiting.sort((a,b)=>{
+        const ta=a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+        const tb=b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+        return ta-tb;
+      });
+      if(!waiting.length) return;
+
+      const item=waiting[0];
+      if(lastIncomingRequestId===item.id) return;
+      lastIncomingRequestId=item.id;
+      currentRequestId=item.id;
+      currentRequestData=item;
+      document.getElementById('req-type').textContent='Incoming Chat';
+      document.getElementById('req-name').textContent=item.userName||'User';
+      document.getElementById('req-start-label').textContent='Start Chat';
+      document.getElementById('incoming-overlay').style.display='flex';
+      startRing();
+      startReqCountdown();
+    } catch(e) {
+      console.error('Next waiting chat error:',e);
+    }
+  }
+
   function startRequestListener(uid) {
-    // Watches all requests for this astrologer and handles waiting CHAT requests.
-    // We intentionally use only one Firestore where() here and filter the rest
-    // in JavaScript so no composite Firestore index is required.
-    const q = query(collection(db,'requests'), where('astrologerId','==',uid));
-    onSnapshot(q, (snap)=>{
-      const waitingChats = snap.docs
-        .map(d => ({id:d.id, data:d.data()}))
-        .filter(x => x.data.queueStatus === 'waiting' && x.data.type === 'chat')
+    const q=query(collection(db,'requests'),where('astrologerId','==',uid));
+    onSnapshot(q, async (snap)=>{
+      const waitingChats=snap.docs
+        .map(d=>({id:d.id,data:d.data()||{}}))
+        .filter(x=>x.data.type==='chat' && x.data.queueStatus==='waiting' && x.data.status!=='ended' && x.data.status!=='declined')
         .sort((a,b)=>{
-          const ta = a.data.createdAt?.toDate ? a.data.createdAt.toDate().getTime() : 0;
-          const tb = b.data.createdAt?.toDate ? b.data.createdAt.toDate().getTime() : 0;
-          return ta - tb;
+          const ta=a.data.createdAt?.toDate ? a.data.createdAt.toDate().getTime() : 0;
+          const tb=b.data.createdAt?.toDate ? b.data.createdAt.toDate().getTime() : 0;
+          return ta-tb;
         });
 
-      // If the currently shown request is no longer waiting, close the popup.
+      // 1) User rejected the chat from the incoming window.
+      // End the chat immediately and put a green "Chat Cancelled" message
+      // into the astrologer's currently open chat screen.
+      for(const d of snap.docs){
+        const r=d.data()||{};
+        if(r.queueStatus!=='user_declined') continue;
+        const cRef=doc(db,'chats',d.id);
+        const cSnap=await getDoc(cRef);
+        if(!cSnap.exists()) continue;
+        const c=cSnap.data()||{};
+        if(c.cancelledNoticeShown===true) continue;
+
+        await updateDoc(cRef,{
+          status:'ended',
+          endReason:'user_cancelled',
+          endedByType:'user',
+          endedByName:r.userName||c.userName||'User',
+          endedAt:serverTimestamp(),
+          cancelledNoticeShown:true
+        });
+
+        const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_cancelled'),limit(1)));
+        if(ms.empty){
+          await addDoc(collection(db,'chats',d.id,'messages'),{
+            text:'Chat Cancelled',
+            senderType:'system',
+            systemEvent:'chat_cancelled',
+            sentAt:serverTimestamp()
+          });
+        }
+
+        if(window.currentChatId===d.id){
+          // Release the astrologer but deliberately keep this chat screen open
+          // so the cancellation is visible. Next request rings after 5 sec.
+          await updateDoc(doc(db,'astrologers',uid),{isBusy:false}).catch(()=>{});
+          window.currentChatId=null;
+          window.currentChatUserName=null;
+          lastIncomingRequestId=null;
+          scheduleNextWaitingRequest(5000);
+        }
+      }
+
+      // 2) If an incoming request disappeared/rejected/timed out, stop its ring.
       if(currentRequestId){
-        const stillWaiting = waitingChats.some(x => x.id === currentRequestId);
+        const stillWaiting=waitingChats.some(x=>x.id===currentRequestId);
         if(!stillWaiting){
           stopRing();
           stopReqCountdown();
           document.getElementById('incoming-overlay').style.display='none';
           currentRequestId=null;
           currentRequestData=null;
+          lastIncomingRequestId=null;
         }
       }
 
-      // Show the oldest waiting chat request.
-      if(!currentRequestId && waitingChats.length){
-        const item = waitingChats[0];
-        currentRequestId = item.id;
-        currentRequestData = item.data;
-
-        document.getElementById('req-type').textContent = 'Incoming Chat';
-        document.getElementById('req-name').textContent = item.data.userName || 'User';
-        document.getElementById('req-start-label').textContent = 'Start Chat';
-        document.getElementById('incoming-overlay').style.display='flex';
-
-        // Ring continuously until Start Chat / Reject / timeout.
-        startRing();
-        startReqCountdown();
+      // 3) New waiting request: ring immediately if astrologer is free.
+      if(!window.currentChatId && !currentRequestId && waitingChats.length && Date.now()>=nextRequestReadyAt){
+        await showNextWaitingRequest();
       }
-    }, (err)=>{
-      console.error('Chat request listener error:', err);
-    });
+
+      // 4) User accepted. Convert waiting chat into active chat.
+      for(const d of snap.docs){
+        const data=d.data()||{};
+        if(data.queueStatus!=='user_accepted') continue;
+        const cRef=doc(db,'chats',d.id);
+        const cSnap=await getDoc(cRef);
+        if(!cSnap.exists()) continue;
+        const c=cSnap.data()||{};
+        if(c.status!=='active') await updateDoc(cRef,{status:'active',requestUserAccepted:true,startedAt:c.startedAt||serverTimestamp()});
+        const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_started'),limit(1)));
+        if(ms.empty) await addDoc(collection(db,'chats',d.id,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
+        if(window.currentChatId!==d.id) openChatThread(d.id,data.userName||'User');
+      }
+    },(err)=>console.error('Chat request listener error:',err));
   }
 
   async function finalizeQueuedRequest(reqId, reqData) {
@@ -3193,7 +3294,9 @@
         document.getElementById('incoming-overlay').style.display='none';
         currentRequestId=null;
         currentRequestData=null;
+        lastIncomingRequestId=null;
       }
+      scheduleNextWaitingRequest(5000);
       loadOrdersScreen();
     } catch(e) {
       alert('Unable to reject request: ' + e.message);
