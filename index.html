@@ -1999,6 +1999,36 @@
   let activeCallDocUnsub = null;
   let activeCallStartedAt = null;
 
+  // User-requested "टर-टर" call tone on the astrologer side.
+  let generalCallTarTarInterval = null;
+  let generalCallTarTarCtx = null;
+  function startGeneralCallTarTar() {
+    if (generalCallTarTarInterval) return;
+    generalCallTarTarCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const play = () => {
+      if (!generalCallTarTarCtx) return;
+      [430, 540].forEach(freq => {
+        const osc = generalCallTarTarCtx.createOscillator();
+        const gain = generalCallTarTarCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.001, generalCallTarTarCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.08, generalCallTarTarCtx.currentTime + 0.03);
+        gain.gain.setValueAtTime(0.08, generalCallTarTarCtx.currentTime + 0.42);
+        gain.gain.linearRampToValueAtTime(0.001, generalCallTarTarCtx.currentTime + 0.48);
+        osc.connect(gain).connect(generalCallTarTarCtx.destination);
+        osc.start();
+        osc.stop(generalCallTarTarCtx.currentTime + 0.5);
+      });
+    };
+    play();
+    generalCallTarTarInterval = setInterval(play, 1800);
+  }
+  function stopGeneralCallTarTar() {
+    if (generalCallTarTarInterval) { clearInterval(generalCallTarTarInterval); generalCallTarTarInterval = null; }
+    if (generalCallTarTarCtx) { generalCallTarTarCtx.close(); generalCallTarTarCtx = null; }
+  }
+
   window.startRemedyCall = async function(orderId, isVideo) {
     showScreen('screen-videocall');
     document.getElementById('vc-status').textContent = 'Connecting...';
@@ -2010,6 +2040,7 @@
     activeCallStartedAt = Date.now();
     updateDoc(doc(db, 'remedyOrders', orderId), { callStatus: 'live' }).catch(()=>{});
     updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: true }).catch(()=>{});
+    if (window.isGeneralCall) startGeneralCallTarTar();
 
     try {
       const tokenRes = await fetch(`${AGORA_BACKEND_URL}/api/agora-token`, {
@@ -2097,6 +2128,7 @@
     } catch (e) { /* ignore */ }
   });
   async function cleanupAndExitCall(isInitiator) {
+    stopGeneralCallTarTar();
     updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: false }).catch(()=>{});
     try {
       if (localAudioTrack) { localAudioTrack.close(); localAudioTrack = null; }
@@ -3010,29 +3042,109 @@
   }
 
   function startRequestListener(uid) {
-    // Watches requests we've picked from the queue, and finalizes them
-    // automatically once the user confirms on their end.
-    const q = query(
-      collection(db, 'requests'),
-      where('astrologerId', '==', uid),
-      where('queueStatus', '==', 'confirmed_by_user')
-    );
+    // Shared request state machine:
+    // waiting -> astrologer_accepted -> user_accepted -> live/accepted
+    const q = query(collection(db, 'requests'), where('astrologerId', '==', uid));
     onSnapshot(q, (snap) => {
+      if (currentRequestId) return;
+
+      let incoming = null;
       snap.forEach(d => {
-        if (d.id === window.__finalizingReqId) return; // already finalizing this one
-        window.__finalizingReqId = d.id;
-        finalizeQueuedRequest(d.id, d.data());
+        const r = d.data();
+        if (!incoming && r && r.status === 'pending' &&
+            (r.queueStatus === 'waiting' || r.queueStatus === 'picked')) {
+          incoming = { id: d.id, data: r };
+        }
+      });
+
+      if (incoming) {
+        currentRequestId = incoming.id;
+        currentRequestData = incoming.data;
+        const r = incoming.data;
+        const typeText = r.type === 'video' ? 'Incoming Video Call' :
+                         r.type === 'call' ? 'Incoming Audio Call' : 'Incoming Chat';
+        document.getElementById('req-type').textContent = typeText;
+        document.getElementById('req-name').textContent = r.userName || 'User';
+        document.getElementById('req-start-label').textContent = r.type === 'chat' ? 'Start Chat' : 'Start Call';
+
+        const overlay = document.getElementById('incoming-overlay');
+        overlay.style.display = 'flex';
+        startRing();
+        startReqCountdown();
+        return;
+      }
+
+      // After the astrologer accepted, wait here until the user accepts.
+      snap.forEach(d => {
+        const r = d.data();
+        if (!r || r.queueStatus !== 'user_accepted' || r.status !== 'accepted') return;
+        if (window.__startedRequestId === d.id) return;
+        window.__startedRequestId = d.id;
+        startAcceptedRequest(d.id, r);
       });
     });
   }
 
-  async function finalizeQueuedRequest(reqId, reqData) {
-    await updateDoc(doc(db, 'requests', reqId), { queueStatus: 'started' });
+  async function startAcceptedRequest(reqId, reqData) {
+    const type = reqData?.type || 'chat';
     currentRequestId = reqId;
     currentRequestData = reqData;
-    document.getElementById('req-accept').click();
-    const isCall = reqData && (reqData.type === 'call' || reqData.type === 'video');
-    alert(isCall ? 'This call has been started.' : 'This chat has been started.');
+    await updateDoc(doc(db, 'requests', reqId), {
+      queueStatus: 'started',
+      startedAt: serverTimestamp()
+    });
+
+    if (type === 'chat') {
+      await setDoc(doc(db, 'chats', reqId), {
+        astrologerId: window.currentUid,
+        userId: reqData.userId || null,
+        userName: reqData.userName || 'User',
+        lastMessage: '',
+        lastMessageAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        selfDetails: reqData.selfDetails || null
+      }, { merge: true });
+
+      if (reqData.selfDetails) {
+        const s = reqData.selfDetails;
+        const sDob = s.dobDisplay || s.dob || '-';
+        const sTob = s.tobDisplay || s.tob || '-';
+        let detailsText = `Name: ${s.name || '-'}\nGender: ${s.gender || '-'}\nDOB: ${sDob}\nTOB: ${sTob}\nPOB: ${s.pob || '-'}`;
+        if (reqData.partnerDetails) {
+          const p = reqData.partnerDetails;
+          const pDob = p.dobDisplay || p.dob || '-';
+          const pTob = p.tobDisplay || p.tob || '-';
+          detailsText += `\n\nPartner Details\nName: ${p.name || '-'}\nGender: ${p.gender || '-'}\nDOB: ${pDob}\nTOB: ${pTob}\nPOB: ${p.pob || '-'}`;
+        }
+        await addDoc(collection(db, 'chats', reqId, 'messages'), {
+          text: detailsText, senderType: 'user', senderId: reqData.userId || null, sentAt: serverTimestamp()
+        });
+      }
+
+      await addDoc(collection(db, 'chats', reqId, 'messages'), {
+        text: 'This chat has been started.',
+        senderType: 'system',
+        sentAt: serverTimestamp()
+      });
+
+      await addDoc(collection(db, 'chats', reqId, 'messages'), {
+        text: 'Welcome to Aangan. Your astrologer will take a minute to analyse your details. You may ask your question in the meantime.',
+        senderType: 'system',
+        sentAt: serverTimestamp()
+      });
+
+      openChatThread(reqId, reqData.userName || 'User');
+    } else {
+      window.isGeneralCall = true;
+      window.currentGeneralCallUserId = reqData.userId || null;
+      window.currentGeneralCallUserName = reqData.userName || 'User';
+      window.currentGeneralCallType = type;
+      window.currentGeneralCallSelfDetails = reqData.selfDetails || null;
+      await startRemedyCall(reqId, type === 'video');
+    }
+
+    currentRequestId = null;
+    currentRequestData = null;
   }
 
   function startOrdersCountListener(uid) {
@@ -3117,60 +3229,14 @@
     stopRing();
     stopReqCountdown();
     document.getElementById('incoming-overlay').style.display = 'none';
+
     const reqId = currentRequestId;
-    const reqData = currentRequestData;
     await updateDoc(doc(db, 'requests', reqId), {
-      status: 'accepted',
-      acceptedAt: serverTimestamp()
+      queueStatus: 'astrologer_accepted',
+      astrologerAcceptedAt: serverTimestamp()
     });
-    if (reqData && reqData.type === 'chat') {
-      await setDoc(doc(db, 'chats', reqId), {
-        astrologerId: window.currentUid,
-        userId: reqData.userId || null,
-        userName: reqData.userName || 'User',
-        lastMessage: '',
-        lastMessageAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-        selfDetails: reqData.selfDetails || null
-      }, { merge: true });
 
-      // Auto-send the user's kundli details as the first message, if provided
-      if (reqData.selfDetails) {
-        const s = reqData.selfDetails;
-        const sDob = s.dobDisplay || s.dob || '-';
-        const sTob = s.tobDisplay || s.tob || '-';
-        let detailsText = `Name: ${s.name || '-'}\nGender: ${s.gender || '-'}\nDOB: ${sDob}\nTOB: ${sTob}\nPOB: ${s.pob || '-'}`;
-        if (reqData.partnerDetails) {
-          const p = reqData.partnerDetails;
-          const pDob = p.dobDisplay || p.dob || '-';
-          const pTob = p.tobDisplay || p.tob || '-';
-          detailsText += `\n\nPartner Details\nName: ${p.name || '-'}\nGender: ${p.gender || '-'}\nDOB: ${pDob}\nTOB: ${pTob}\nPOB: ${p.pob || '-'}`;
-        }
-        await addDoc(collection(db, 'chats', reqId, 'messages'), {
-          text: detailsText, senderType: 'user', senderId: reqData.userId || null, sentAt: serverTimestamp()
-        });
-      }
-      // System message marking the start of the chat
-      await addDoc(collection(db, 'chats', reqId, 'messages'), {
-        text: 'This is an automated message to confirm that the chat has started.', senderType: 'system', sentAt: serverTimestamp()
-      });
-      await addDoc(collection(db, 'chats', reqId, 'messages'), {
-        text: 'Welcome to Aangan. Your astrologer will take a minute to analyse your details. You may ask your question in the meantime.', senderType: 'system', sentAt: serverTimestamp()
-      });
-
-      openChatThread(reqId, reqData.userName || 'User');
-    } else if (reqData && (reqData.type === 'call' || reqData.type === 'video')) {
-      try {
-        window.isGeneralCall = true;
-        window.currentGeneralCallUserId = reqData.userId || null;
-        window.currentGeneralCallUserName = reqData.userName || 'User';
-        window.currentGeneralCallType = reqData.type;
-        window.currentGeneralCallSelfDetails = reqData.selfDetails || null;
-        await startRemedyCall(reqId, reqData.type === 'video');
-      } catch (err) {
-        alert('General call accept error: ' + err.message);
-      }
-    }
+    // IMPORTANT: do not enter chat/call yet. The user must accept on their side.
     currentRequestId = null;
     currentRequestData = null;
   });
@@ -3182,6 +3248,7 @@
     document.getElementById('incoming-overlay').style.display = 'none';
     await updateDoc(doc(db, 'requests', currentRequestId), {
       status: 'declined',
+      queueStatus: 'declined',
       declinedAt: serverTimestamp()
     });
     currentRequestId = null;
