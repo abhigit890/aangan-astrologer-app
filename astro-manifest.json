@@ -1,6 +1,6 @@
 {
-  "name": "Aangan Astrologer",
-  "short_name": "Aangan Astro",
+  "name": "Kinnar Talk Astrologer",
+  "short_name": "KT Astro",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
