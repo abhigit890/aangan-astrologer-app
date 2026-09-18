@@ -3213,9 +3213,39 @@
       // Single-field queries only; filter the second field locally.
       getDocs(query(collection(db, 'chats'), where('astrologerId', '==', window.currentUid))),
       getDocs(query(collection(db, 'requests'), where('astrologerId', '==', window.currentUid)))
-    ]).then(([chatSnap, reqSnapAll]) => {
-      const activeChatDocs = chatSnap.docs.filter(d => d.data().status !== 'ended');
-      const reqDocs = reqSnapAll.docs.filter(d => d.data().queueStatus === 'waiting');
+    ]).then(async ([chatSnap, reqSnapAll]) => {
+      // A chat is shown as ONGOING only when the corresponding request is
+      // genuinely accepted by the user. Old/stale chat documents must not
+      // appear as an active conversation just because their chat.status is
+      // still 'active'.
+      const requestById = new Map(reqSnapAll.docs.map(d => [d.id, d.data() || {}]));
+      const activeChatDocs = chatSnap.docs.filter(d => {
+        const c = d.data() || {};
+        const r = requestById.get(d.id);
+        return c.status === 'active' && r && r.type === 'chat' && r.queueStatus === 'user_accepted';
+      });
+
+      // Clean up orphaned/stale active chats left by an interrupted test/session.
+      // This also releases the astrologer's busy state when there is no real
+      // user-accepted chat running.
+      for (const d of chatSnap.docs) {
+        const c = d.data() || {};
+        if (c.status !== 'active') continue;
+        const r = requestById.get(d.id);
+        if (!r || r.type !== 'chat' || r.queueStatus !== 'user_accepted') {
+          await updateDoc(doc(db, 'chats', d.id), {
+            status: 'ended',
+            endReason: 'stale_session_cleanup',
+            endedByType: 'system',
+            endedAt: serverTimestamp()
+          }).catch(() => {});
+        }
+      }
+
+      const reqDocs = reqSnapAll.docs.filter(d => {
+        const r = d.data() || {};
+        return r.type === 'chat' && r.queueStatus === 'waiting' && r.status !== 'ended' && r.status !== 'declined';
+      });
       let html = '';
 
       if (activeChatDocs.length) {
