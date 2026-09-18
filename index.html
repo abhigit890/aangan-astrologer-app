@@ -39,7 +39,7 @@
       linear-gradient(180deg, #FFFDF8 0%, #FBF8F1 55%, #FAF6EE 100%);
   }
   .display{ font-family:'Cinzel',serif; letter-spacing:.02em; }
-  .gold-card, .toggle-row, .tile, .ashtak-cell, .shadbala-row, .kp-row, .bhava-row, .rsuggest-card, .ticket-row, .remedy-row, .kundli-tabs .uk-tab, .astro-card, .booking-row, .performer-row{
+  .gold-card, .toggle-row, .tile, .ashtak-cell, .shadbala-row, .kp-row, .bhava-row, .rsuggest-card, .ticket-row, .remedy-row, .kundli-tabs .uk-tab, .astro-card, .booking-row, .performer-row, .rv-card{
     border:2px solid transparent; border-radius:var(--radius-md);
     background: linear-gradient(160deg, var(--card-hi), var(--card)) padding-box, var(--metal) border-box;
     backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%);
@@ -387,6 +387,18 @@
   .ticket-row .tstatus.open{ background:rgba(62,158,92,0.18); color:var(--green); }
   .ticket-row .tstatus.closed{ background:rgba(196,87,126,0.18); color:#E08AA8; }
   .booking-row{ padding:14px 16px; margin-bottom:12px; border-radius:12px; }
+  .rv-filter{
+    flex-shrink:0; padding:7px 16px; border-radius:16px; border:1px solid var(--line);
+    font-size:12.5px; font-weight:600; color:var(--dim); cursor:pointer;
+  }
+  .rv-filter.active{ background:var(--gold); color:#2E1D0C; border-color:var(--gold); }
+  .rv-card{ padding:14px 16px; margin-bottom:12px; border-radius:12px; }
+  .rv-card .rv-stars{ color:var(--gold-text); font-size:15px; letter-spacing:1px; }
+  .rv-card .rv-name{ font-size:13px; font-weight:700; color:var(--ink); }
+  .rv-card .rv-date{ font-size:11px; color:var(--dim); }
+  .rv-card .rv-text{ font-size:13px; color:var(--ink); margin-top:8px; line-height:1.5; }
+  .rv-card .rv-hide-btn{ font-size:11px; color:var(--dim); cursor:pointer; margin-top:10px; text-decoration:underline; }
+  .rv-card .rv-hidden-tag{ font-size:11px; color:var(--rose); margin-top:10px; font-weight:600; }
   .performer-row{
     display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:10px;
     border-radius:12px; cursor:pointer;
@@ -518,7 +530,7 @@
     <div class="tile" id="tile-calls"><div class="icon-circle">📞</div><div class="tile-label">Calls</div></div>
     <div class="tile" id="tile-bookings"><div class="icon-circle">🙏</div><div class="tile-label">Remedy Bookings</div></div>
     <div class="tile"><div class="icon-circle">🎁</div><div class="tile-label">Offers</div></div>
-    <div class="tile"><div class="icon-circle">⭐</div><div class="tile-label">My Reviews</div></div>
+    <div class="tile" id="tile-reviews"><div class="icon-circle">⭐</div><div class="tile-label">My Reviews</div></div>
     <div class="tile"><div class="icon-circle">⚙️</div><div class="tile-label">Settings</div></div>
     <div class="tile" id="tile-support"><div class="icon-circle">🎧</div><div class="tile-label">Support</div></div>
   </div>
@@ -641,6 +653,23 @@
     <button class="orders-tab" data-orders-tab="astromall">AstroMall</button>
   </div>
   <div id="orders-body" class="orders-content"></div>
+</div>
+
+<!-- REVIEWS -->
+<div class="sub-screen" id="screen-reviews">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">My Reviews</span>
+  </div>
+  <div id="reviews-filter-bar" style="display:flex; gap:6px; padding:70px 14px 10px; overflow-x:auto;">
+    <span class="rv-filter active" data-star="all">All</span>
+    <span class="rv-filter" data-star="5">5★</span>
+    <span class="rv-filter" data-star="4">4★</span>
+    <span class="rv-filter" data-star="3">3★</span>
+    <span class="rv-filter" data-star="2">2★</span>
+    <span class="rv-filter" data-star="1">1★</span>
+  </div>
+  <div id="reviews-body" style="padding:6px 18px 40px;"></div>
 </div>
 
 <!-- REMEDY BOOKINGS -->
@@ -2363,6 +2392,93 @@
 
   document.getElementById('vc-leave').addEventListener('click', () => cleanupAndExitCall(true));
 
+  // ---- My Reviews ----
+  let reviewsUnsub = null;
+  let currentReviewFilter = 'all';
+
+  document.getElementById('tile-reviews').addEventListener('click', () => {
+    showScreen('screen-reviews');
+    currentReviewFilter = 'all';
+    document.querySelectorAll('.rv-filter').forEach(f => f.classList.toggle('active', f.dataset.star === 'all'));
+    loadReviewsScreen();
+  });
+
+  document.querySelectorAll('.rv-filter').forEach(f => {
+    f.addEventListener('click', () => {
+      document.querySelectorAll('.rv-filter').forEach(x => x.classList.remove('active'));
+      f.classList.add('active');
+      currentReviewFilter = f.dataset.star;
+      renderReviewsList();
+    });
+  });
+
+  let allReviewsCache = [];
+
+  function loadReviewsScreen() {
+    const body = document.getElementById('reviews-body');
+    body.innerHTML = '<div class="empty-state">Loading...</div>';
+    if (reviewsUnsub) { reviewsUnsub(); reviewsUnsub = null; }
+    reviewsUnsub = onSnapshot(query(collection(db, 'reviews'), where('astrologerId', '==', window.currentUid)), (snap) => {
+      allReviewsCache = [];
+      snap.forEach(d => allReviewsCache.push({ id: d.id, ...d.data() }));
+      allReviewsCache.sort((a, b) => {
+        const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+        const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+        return tb - ta;
+      });
+      renderReviewsList();
+    }, (err) => { body.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`; });
+  }
+
+  function renderReviewsList() {
+    const body = document.getElementById('reviews-body');
+    let rows = allReviewsCache;
+    if (currentReviewFilter !== 'all') {
+      rows = rows.filter(r => String(r.rating) === currentReviewFilter);
+    }
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty-state">No reviews here yet.</div>';
+      return;
+    }
+    body.innerHTML = rows.map(r => {
+      const stars = '★'.repeat(r.rating || 0) + '☆'.repeat(5 - (r.rating || 0));
+      const dateText = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+      return `
+        <div class="rv-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="rv-stars">${stars}</span>
+            <span class="rv-date">${dateText}</span>
+          </div>
+          <div class="rv-name" style="margin-top:6px;">${r.userName || 'User'}</div>
+          ${r.description ? `<div class="rv-text">${r.description}</div>` : ''}
+          ${r.hidden ? `<div class="rv-hidden-tag">Hidden from public profile</div>` : `<div class="rv-hide-btn" onclick="hideReview('${r.id}')">Hide this review</div>`}
+        </div>
+      `;
+    }).join('');
+  }
+
+  window.hideReview = async function(reviewId) {
+    if (!confirm('Hide this review from your public profile? You can hide up to 30 reviews per month.')) return;
+    try {
+      const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+      const a = astroSnap.exists() ? astroSnap.data() : {};
+      const nowMonthKey = new Date().toISOString().slice(0, 7); // "2026-09"
+      let count = a.reviewHidesCount || 0;
+      let monthKey = a.reviewHidesMonth || '';
+      if (monthKey !== nowMonthKey) { count = 0; monthKey = nowMonthKey; }
+      if (count >= 30) {
+        alert('You have reached your limit of 30 hidden reviews this month.');
+        return;
+      }
+      await updateDoc(doc(db, 'reviews', reviewId), { hidden: true });
+      await updateDoc(doc(db, 'astrologers', window.currentUid), {
+        reviewHidesCount: count + 1, reviewHidesMonth: monthKey
+      });
+    } catch (e) {
+      alert('Could not hide review: ' + e.message);
+    }
+  };
+
   document.getElementById('tile-support').addEventListener('click', openSupportList);
 
   function openSupportList() {
@@ -3237,13 +3353,25 @@
         await showNextWaitingRequest();
       }
 
-      // 4) User accepted. Convert waiting chat into active chat.
+      // 4) User accepted. Convert waiting chat into active chat, or join an accepted call.
       if (!window.__handledAcceptedRequests) window.__handledAcceptedRequests = new Set();
       for(const d of snap.docs){
         const data=d.data()||{};
         if(data.queueStatus!=='user_accepted') continue;
         if(window.__handledAcceptedRequests.has(d.id)) continue; // already handled this session, avoid re-processing
         window.__handledAcceptedRequests.add(d.id);
+
+        if (data.type !== 'chat') {
+          // Call: the user just accepted our ring — join the call now.
+          window.isGeneralCall = true;
+          window.currentGeneralCallUserId = data.userId || null;
+          window.currentGeneralCallUserName = data.userName || 'User';
+          window.currentGeneralCallType = data.type;
+          window.currentGeneralCallSelfDetails = data.selfDetails || null;
+          startRemedyCall(d.id, data.type === 'video');
+          continue;
+        }
+
         const cRef=doc(db,'chats',d.id);
         const cSnap=await getDoc(cRef);
         if(!cSnap.exists()) continue;
@@ -3393,13 +3521,29 @@
     const reqSnap=await getDoc(doc(db,'requests',reqId));
     if(!reqSnap.exists()) return;
     const r=reqSnap.data();
-    if(r.type !== 'chat'){ await updateDoc(doc(db,'requests',reqId),{queueStatus:'picked'}); loadOrdersScreen(); return; }
+    if(r.type !== 'chat'){
+      window.isGeneralCall = true;
+      await updateDoc(doc(db,'requests',reqId),{queueStatus:'astrologer_accepted',astrologerAcceptedAt:serverTimestamp()});
+      showAstrologerCallWaiting(r.userName||'User');
+      return;
+    }
     await setDoc(doc(db,'chats',reqId),{astrologerId:window.currentUid,userId:r.userId||null,userName:r.userName||'User',status:'waiting_user_acceptance',createdAt:serverTimestamp(),lastMessage:'',lastMessageAt:serverTimestamp(),selfDetails:r.selfDetails||null},{merge:true});
     await sendKundliDetailsMessage(reqId, r.selfDetails);
     await updateDoc(doc(db,'requests',reqId),{queueStatus:'astrologer_accepted',astrologerAcceptedAt:serverTimestamp()});
     window.currentChatId=reqId; window.currentChatUserName=r.userName||'User';
     openChatThread(reqId,r.userName||'User');
   };
+
+  function showAstrologerCallWaiting(userName) {
+    showScreen('screen-videocall');
+    document.getElementById('vc-status').textContent = `Waiting for ${userName} to accept...`;
+    document.getElementById('vc-local-container').style.display = 'none';
+    document.getElementById('vc-toggle-cam').style.display = 'none';
+    document.getElementById('vc-flip-cam').style.display = 'none';
+    document.getElementById('vc-speaker-btn').style.display = 'none';
+    document.getElementById('vc-toggle-mic').style.display = 'none';
+    document.getElementById('vc-call-info-panel').style.display = 'none';
+  }
 
   window.rejectFromOrders = async function(reqId) {
     try {
