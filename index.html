@@ -790,6 +790,12 @@
     <span class="back" id="user-kundli-back">←</span>
     <span class="title">Kundli</span>
   </div>
+  <div id="uk-person-selector" style="display:none; padding:14px 14px 0;">
+    <div style="display:flex; gap:8px;">
+      <span class="uk-person-btn active" data-person="self" style="flex:1; text-align:center; padding:9px; border-radius:20px; font-size:13px; font-weight:700; cursor:pointer; background:var(--gold); color:#2E1D0C;">Self</span>
+      <span class="uk-person-btn" data-person="partner" style="flex:1; text-align:center; padding:9px; border-radius:20px; font-size:13px; font-weight:700; cursor:pointer; background:transparent; color:var(--dim); border:1px solid var(--line);">Partner</span>
+    </div>
+  </div>
   <div class="uk-tabs" id="uk-tabs">
     <button class="uk-tab active" data-tab="birth">Birth Details</button>
     <button class="uk-tab" data-tab="charts">Charts</button>
@@ -1217,7 +1223,10 @@
           updateDoc(doc(db, 'chats', chatId, 'messages', d.id), { delivered: true, read: true }).catch(()=>{});
         }
         if (m.photo) {
-          bubble.innerHTML = `<img src="${m.photo}" style="width:100%; border-radius:8px; cursor:pointer;" onclick="openPhotoViewer('${m.photo.replace(/'/g,"\\'")}')"><span class="ts">${time}${ticks}</span>`;
+          bubble.innerHTML = `<img class="chat-photo-msg" style="width:100%; border-radius:8px; cursor:pointer;"><span class="ts">${time}${ticks}</span>`;
+          const imgEl = bubble.querySelector('.chat-photo-msg');
+          imgEl.src = m.photo;
+          imgEl.addEventListener('click', () => openPhotoViewer(imgEl.src));
         } else if (m.voiceNote) {
           bubble.innerHTML = `<audio controls src="${m.voiceNote}" style="max-width:210px;"></audio><span class="ts">${time}${ticks}</span>`;
         } else {
@@ -2636,17 +2645,12 @@
   document.getElementById('ticket-send').addEventListener('click', sendTicketMessage);
   document.getElementById('ticket-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendTicketMessage(); });
 
-  document.getElementById('tt-kundli').addEventListener('click', async () => {
-    showScreen('screen-user-kundli');
+  async function loadKundliForPerson(s) {
     document.getElementById('uk-content').innerHTML = '<div class="empty-state">Loading kundli...</div>';
     document.querySelectorAll('#uk-tabs .uk-tab').forEach((b,i) => b.classList.toggle('active', i===0));
-
     try {
-      const reqSnap = await getDoc(doc(db, 'requests', window.currentChatId));
-      const reqData = reqSnap.exists() ? reqSnap.data() : null;
-      const s = reqData && reqData.selfDetails;
       if (!s) {
-        document.getElementById('uk-content').innerHTML = '<div class="empty-state">This user did not fill kundli details.</div>';
+        document.getElementById('uk-content').innerHTML = '<div class="empty-state">This person did not fill kundli details.</div>';
         return;
       }
 
@@ -2657,7 +2661,7 @@
       const min = (s.min !== undefined && s.min !== null) ? s.min : parseTobDisplay(s.tobDisplay || s.tob).min;
 
       if (!day || !month || !year || hour === null || min === null) {
-        document.getElementById('uk-content').innerHTML = '<div class="empty-state">Could not read this user\'s birth date/time. Ask them to send a new chat request with details filled in the latest app version.</div>';
+        document.getElementById('uk-content').innerHTML = '<div class="empty-state">Could not read this person\'s birth date/time. Ask them to send a new chat request with details filled in the latest app version.</div>';
         return;
       }
 
@@ -2697,6 +2701,40 @@
     } catch (err) {
       document.getElementById('uk-content').innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
     }
+  }
+
+  document.getElementById('tt-kundli').addEventListener('click', async () => {
+    showScreen('screen-user-kundli');
+    document.getElementById('uk-content').innerHTML = '<div class="empty-state">Loading kundli...</div>';
+    document.querySelectorAll('#uk-tabs .uk-tab').forEach((b,i) => b.classList.toggle('active', i===0));
+
+    const reqSnap = await getDoc(doc(db, 'requests', window.currentChatId));
+    const reqData = reqSnap.exists() ? reqSnap.data() : null;
+    const s = reqData && reqData.selfDetails;
+    const p = reqData && reqData.partnerDetails;
+
+    const selectorEl = document.getElementById('uk-person-selector');
+    if (p) {
+      selectorEl.style.display = 'block';
+      const selfBtn = selectorEl.querySelector('[data-person="self"]');
+      const partnerBtn = selectorEl.querySelector('[data-person="partner"]');
+      selfBtn.textContent = (s && s.name) || 'Self';
+      partnerBtn.textContent = p.name || 'Partner';
+      selfBtn.onclick = () => {
+        selfBtn.style.background = 'var(--gold)'; selfBtn.style.color = '#2E1D0C'; selfBtn.style.border = 'none';
+        partnerBtn.style.background = 'transparent'; partnerBtn.style.color = 'var(--dim)'; partnerBtn.style.border = '1px solid var(--line)';
+        loadKundliForPerson(s);
+      };
+      partnerBtn.onclick = () => {
+        partnerBtn.style.background = 'var(--gold)'; partnerBtn.style.color = '#2E1D0C'; partnerBtn.style.border = 'none';
+        selfBtn.style.background = 'transparent'; selfBtn.style.color = 'var(--dim)'; selfBtn.style.border = '1px solid var(--line)';
+        loadKundliForPerson(p);
+      };
+    } else {
+      selectorEl.style.display = 'none';
+    }
+
+    loadKundliForPerson(s);
   });
 
   document.querySelectorAll('#uk-tabs .uk-tab').forEach(tab => {
