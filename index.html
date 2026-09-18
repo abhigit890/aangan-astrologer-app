@@ -1070,6 +1070,13 @@
     threadStatusUnsub = onSnapshot(doc(db, 'chats', chatId), async (chatSnap) => {
       const c=chatSnap.exists()?chatSnap.data():{};
       const ended=c.status==='ended'; const active=c.status==='active';
+      if (ended) {
+        if (window.currentChatId === chatId) {
+          window.currentChatId = null;
+          window.currentChatUserName = null;
+        }
+        updateOngoingChatBar();
+      }
       document.getElementById('thread-input').disabled = !active;
       document.getElementById('thread-send').disabled = !active;
       document.getElementById('end-chat-btn').style.display = (active||c.status==='waiting_user_acceptance') ? 'block' : 'none';
