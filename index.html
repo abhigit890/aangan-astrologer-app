@@ -3209,17 +3209,27 @@
       }
 
       // 4) User accepted. Convert waiting chat into active chat.
+      if (!window.__handledAcceptedRequests) window.__handledAcceptedRequests = new Set();
       for(const d of snap.docs){
         const data=d.data()||{};
         if(data.queueStatus!=='user_accepted') continue;
+        if(window.__handledAcceptedRequests.has(d.id)) continue; // already handled this session, avoid re-processing
+        window.__handledAcceptedRequests.add(d.id);
         const cRef=doc(db,'chats',d.id);
         const cSnap=await getDoc(cRef);
         if(!cSnap.exists()) continue;
         const c=cSnap.data()||{};
+        if(c.status==='ended'){
+          // This chat already finished in a previous session — never revive it.
+          await updateDoc(doc(db,'requests',d.id),{queueStatus:'completed'}).catch(()=>{});
+          continue;
+        }
         if(c.status!=='active') await updateDoc(cRef,{status:'active',requestUserAccepted:true,startedAt:c.startedAt||serverTimestamp()});
         const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_started'),limit(1)));
         if(ms.empty) await addDoc(collection(db,'chats',d.id,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
-        if(window.currentChatId!==d.id) openChatThread(d.id,data.userName||'User');
+        await updateDoc(doc(db,'requests',d.id),{queueStatus:'completed'}).catch(()=>{});
+        // Don't force-navigate the astrologer's screen — just update the data.
+        // They'll see it via the Ongoing Chat bar / Orders tab and can open it themselves.
       }
     },(err)=>console.error('Chat request listener error:',err));
   }
