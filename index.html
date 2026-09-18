@@ -198,7 +198,26 @@
   .tt-icon{ font-size:18px; }
 
   /* user kundli view */
-  .uk-tabs{
+  /* ---- ORDERS TABS / HISTORY ---- */
+.orders-tabs{display:flex;align-items:stretch;overflow-x:auto;border-bottom:1px solid var(--line);background:var(--bg-soft);position:sticky;top:57px;z-index:4}
+.orders-tab{flex:1;min-width:82px;padding:15px 8px 12px;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--dim);font-size:13.5px;font-weight:600;cursor:pointer}
+.orders-tab.active{color:var(--gold-text);border-bottom-color:var(--gold)}
+.orders-tab .orders-tab-count{display:inline-flex;min-width:17px;height:17px;padding:0 5px;margin-left:4px;align-items:center;justify-content:center;border-radius:10px;background:var(--rose);color:#fff;font-size:10px;vertical-align:middle}
+.orders-content{padding:14px 18px 90px}
+.orders-section-title{display:flex;justify-content:space-between;align-items:center;margin:2px 0 12px;color:var(--gold-text);font-size:15px;font-weight:700}
+.orders-refresh{padding:6px 12px;border-radius:12px;border:1px solid var(--line);background:transparent;color:var(--gold-text);font-size:11px;cursor:pointer}
+.orders-history-card{margin-bottom:14px;padding:14px;border-radius:14px;border:2px solid transparent;background:linear-gradient(160deg,var(--card-hi),var(--card)) padding-box,var(--metal) border-box;box-shadow:0 6px 18px rgba(120,90,20,.12),inset 0 1px 0 rgba(255,255,255,.45)}
+.orders-history-card .oh-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.orders-history-card .oh-user{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.orders-history-card .oh-avatar{width:34px;height:34px;border-radius:50%;background:rgba(217,169,79,.16);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:17px}
+.orders-history-card .oh-avatar img{width:100%;height:100%;object-fit:cover}
+.orders-history-card .oh-name{font-weight:700;font-size:15px}.orders-history-card .oh-meta{color:var(--dim);font-size:11px}.orders-history-card .oh-details{font-size:12.5px;color:var(--ink);line-height:1.9}
+.orders-history-card .oh-actions{display:flex;gap:8px;margin-top:12px}.orders-history-card .oh-actions button{flex:1;padding:9px 4px;border-radius:9px;border:1px solid var(--gold);background:transparent;color:var(--gold-text);font-size:11.5px;font-weight:600;cursor:pointer}
+.orders-wait-card{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.orders-wait-card .ow-avatar{width:42px;height:42px;border-radius:50%;background:rgba(217,169,79,.16);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
+.orders-wait-card .ow-info{flex:1;min-width:0}.orders-wait-card .ow-name{font-weight:700;font-size:14px}.orders-wait-card .ow-meta{color:var(--dim);font-size:11.5px;margin-top:3px}.orders-wait-card .ow-actions{display:flex;gap:6px}
+.orders-wait-card .ow-actions button{padding:8px 10px;border-radius:10px;border:1px solid var(--gold);background:var(--gold);color:#2E1D0C;font-size:11px;font-weight:700;cursor:pointer}.orders-wait-card .ow-actions button.reject{background:transparent;color:var(--rose);border-color:var(--rose)}
+.uk-tabs{
     display:flex; gap:8px; padding:14px 14px 10px; overflow-x:auto;
   }
   .uk-tab{
@@ -603,13 +622,16 @@
   <button id="perform-yourself-btn" style="position:fixed; bottom:0; left:0; right:0; max-width:480px; margin:0 auto; padding:16px; border:none; border-top:1px solid var(--line); background:var(--gold); color:#2E1D0C; font-weight:700; font-size:15px; cursor:pointer;">Perform Yourself</button>
 </div>
 
-<!-- ORDERS (WAITING LIST) -->
+<!-- ORDERS -->
 <div class="sub-screen" id="screen-orders">
-  <div class="sub-header">
-    <span class="back" data-back="dashboard">←</span>
-    <span class="title">Orders</span>
+  <div class="sub-header"><span class="back" data-back="dashboard">←</span><span class="title">Orders</span></div>
+  <div class="orders-tabs" id="orders-tabs">
+    <button class="orders-tab active" data-orders-tab="waitlist">WaitList <span class="orders-tab-count" id="orders-wait-count" style="display:none;">0</span></button>
+    <button class="orders-tab" data-orders-tab="chat">Chat</button>
+    <button class="orders-tab" data-orders-tab="call">Call</button>
+    <button class="orders-tab" data-orders-tab="astromall">AstroMall</button>
   </div>
-  <div id="orders-body" style="padding:70px 18px 40px;"></div>
+  <div id="orders-body" class="orders-content"></div>
 </div>
 
 <!-- REMEDY BOOKINGS -->
@@ -2135,13 +2157,28 @@
       if (isInitiator && activeCallStartedAt) {
         const durationSec = Math.round((Date.now() - activeCallStartedAt) / 1000);
         try {
+          let callSelfDetails = window.currentGeneralCallSelfDetails || null;
+          let callPartnerDetails = null;
+          if (activeCallOrderId) {
+            try {
+              const reqSnap = await getDoc(doc(db, 'requests', activeCallOrderId));
+              if (reqSnap.exists()) {
+                const req = reqSnap.data() || {};
+                callSelfDetails = callSelfDetails || req.selfDetails || null;
+                callPartnerDetails = req.partnerDetails || null;
+              }
+            } catch (e) { /* keep available details */ }
+          }
           await addDoc(collection(db, 'calls'), {
             astrologerId: window.currentUid,
             userId: window.currentGeneralCallUserId || null,
             userName: window.currentGeneralCallUserName || 'User',
             type: window.currentGeneralCallType || 'call',
             duration: durationSec,
-            calledAt: serverTimestamp()
+            calledAt: serverTimestamp(),
+            requestId: activeCallOrderId || null,
+            selfDetails: callSelfDetails,
+            partnerDetails: callPartnerDetails
           });
         } catch (e) { /* ignore */ }
         if (activeCallOrderId) {
@@ -3204,100 +3241,84 @@
     loadOrdersScreen();
   });
 
+  let ordersWaitUnsub = null;
+  let ordersActiveTab = 'waitlist';
+
+  document.querySelectorAll('#orders-tabs .orders-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      ordersActiveTab = btn.dataset.ordersTab;
+      document.querySelectorAll('#orders-tabs .orders-tab').forEach(b => b.classList.toggle('active', b === btn));
+      renderOrdersTab(ordersActiveTab);
+    });
+  });
+
   function loadOrdersScreen() {
     showScreen('screen-orders');
-    const body = document.getElementById('orders-body');
-    body.innerHTML = '<div class="empty-state">Loading...</div>';
-
-    Promise.all([
-      // Single-field queries only; filter the second field locally.
-      getDocs(query(collection(db, 'chats'), where('astrologerId', '==', window.currentUid))),
-      getDocs(query(collection(db, 'requests'), where('astrologerId', '==', window.currentUid)))
-    ]).then(async ([chatSnap, reqSnapAll]) => {
-      // A chat is shown as ONGOING only when the corresponding request is
-      // genuinely accepted by the user. Old/stale chat documents must not
-      // appear as an active conversation just because their chat.status is
-      // still 'active'.
-      const requestById = new Map(reqSnapAll.docs.map(d => [d.id, d.data() || {}]));
-      const activeChatDocs = chatSnap.docs.filter(d => {
-        const c = d.data() || {};
-        const r = requestById.get(d.id);
-        return c.status === 'active' && r && r.type === 'chat' && r.queueStatus === 'user_accepted';
-      });
-
-      // Clean up orphaned/stale active chats left by an interrupted test/session.
-      // This also releases the astrologer's busy state when there is no real
-      // user-accepted chat running.
-      for (const d of chatSnap.docs) {
-        const c = d.data() || {};
-        if (c.status !== 'active') continue;
-        const r = requestById.get(d.id);
-        if (!r || r.type !== 'chat' || r.queueStatus !== 'user_accepted') {
-          await updateDoc(doc(db, 'chats', d.id), {
-            status: 'ended',
-            endReason: 'stale_session_cleanup',
-            endedByType: 'system',
-            endedAt: serverTimestamp()
-          }).catch(() => {});
-        }
-      }
-
-      const reqDocs = reqSnapAll.docs.filter(d => {
-        const r = d.data() || {};
-        return r.type === 'chat' && r.queueStatus === 'waiting' && r.status !== 'ended' && r.status !== 'declined';
-      });
-      let html = '';
-
-      if (activeChatDocs.length) {
-        const c = activeChatDocs[0].data();
-        const cid = activeChatDocs[0].id;
-        html += `
-          <div class="booking-row" style="margin-bottom:18px;">
-            <div style="font-size:11px; color:var(--green); font-weight:700; margin-bottom:6px;">● ONGOING CHAT</div>
-            <div class="bname">${c.userName || 'User'}</div>
-            <button style="width:100%; margin-top:10px; padding:10px; border-radius:10px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; cursor:pointer;" onclick="openChatThread('${cid}', '${(c.userName||'User').replace(/'/g,"\\'")}')">Open Chat</button>
-          </div>
-        `;
-      }
-
-      html += `<div style="font-size:13px; font-weight:700; color:var(--gold-text); margin-bottom:10px;">Waiting List (${reqDocs.length})</div>`;
-
-      if (reqDocs.length === 0) {
-        html += '<div class="empty-state">No one is waiting right now.</div>';
-      } else {
-        const rows = [];
-        reqDocs.forEach(d => rows.push({ id: d.id, ...d.data() }));
-        rows.sort((a, b) => {
-          const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
-          const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
-          return ta - tb;
-        });
-        html += rows.map((r, i) => {
-          const waitMin = r.createdAt?.toDate ? Math.max(0, Math.round((Date.now() - r.createdAt.toDate().getTime()) / 60000)) : 0;
-          return `
-            <div class="booking-row">
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                  <div class="bname">#${i+1} · ${r.userName || 'User'}</div>
-                  <div class="buser">${r.type === 'video' ? 'Video Call' : r.type === 'call' ? 'Audio Call' : 'Chat'} · waiting ${waitMin} min</div>
-                </div>
-                ${r.type === 'chat'
-                  ? `<div style="display:flex; gap:6px;">
-                       <button style="padding:9px 12px; border-radius:20px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; font-size:12px; cursor:pointer;" onclick="pickFromOrders('${r.id}')">Start Chat</button>
-                       <button style="padding:9px 10px; border-radius:20px; border:1px solid #E08AA8; background:transparent; color:#B14E72; font-weight:700; font-size:12px; cursor:pointer;" onclick="rejectFromOrders('${r.id}')">Reject</button>
-                     </div>`
-                  : `<button style="padding:9px 16px; border-radius:20px; border:none; background:var(--gold); color:#2E1D0C; font-weight:700; font-size:12.5px; cursor:pointer;" onclick="pickFromOrders('${r.id}')">Pick</button>`}
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
-
-      body.innerHTML = html;
-    }).catch(err => {
-      body.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-    });
+    ordersActiveTab='waitlist';
+    document.querySelectorAll('#orders-tabs .orders-tab').forEach((b,i)=>b.classList.toggle('active',i===0));
+    if(ordersWaitUnsub){ordersWaitUnsub();ordersWaitUnsub=null;}
+    const q=query(collection(db,'requests'),where('astrologerId','==',window.currentUid));
+    ordersWaitUnsub=onSnapshot(q,(snap)=>{
+      const waiting=snap.docs.map(d=>({id:d.id,data:d.data()||{}})).filter(x=>x.data.queueStatus==='waiting'&&x.data.status!=='ended'&&x.data.status!=='declined').sort((a,b)=>(a.data.createdAt?.toDate?.().getTime?.()||0)-(b.data.createdAt?.toDate?.().getTime?.()||0));
+      const count=document.getElementById('orders-wait-count');
+      if(count){count.textContent=waiting.length;count.style.display=waiting.length?'inline-flex':'none';}
+      if(ordersActiveTab==='waitlist')renderOrdersWaitList(waiting);
+    },err=>{if(ordersActiveTab==='waitlist')document.getElementById('orders-body').innerHTML=`<div class="empty-state">Error: ${err.message}</div>`;});
+    renderOrdersTab('waitlist');
   }
+
+  async function renderOrdersTab(tab){
+    const body=document.getElementById('orders-body');body.innerHTML='<div class="empty-state">Loading...</div>';
+    if(tab==='waitlist'){
+      const snap=await getDocs(query(collection(db,'requests'),where('astrologerId','==',window.currentUid))).catch(()=>null);if(!snap)return;
+      const waiting=snap.docs.map(d=>({id:d.id,data:d.data()||{}})).filter(x=>x.data.queueStatus==='waiting'&&x.data.status!=='ended'&&x.data.status!=='declined').sort((a,b)=>(a.data.createdAt?.toDate?.().getTime?.()||0)-(b.data.createdAt?.toDate?.().getTime?.()||0));
+      renderOrdersWaitList(waiting);return;
+    }
+    if(tab==='chat'){await renderOrdersChatHistory();return;}
+    if(tab==='call'){await renderOrdersCallHistory();return;}
+    body.innerHTML='<div class="orders-section-title"><span>AstroMall</span></div><div class="empty-state">AstroMall orders will appear here.</div>';
+  }
+
+  function renderOrdersWaitList(waiting){
+    const body=document.getElementById('orders-body');
+    if(!waiting.length){body.innerHTML=`<div class="orders-section-title"><span>Waiting List (0)</span><button class="orders-refresh" onclick="renderOrdersTab('waitlist')">Refresh</button></div><div class="empty-state">There are currently no users available in your waitlist.</div>`;return;}
+    body.innerHTML=`<div class="orders-section-title"><span>Waiting List (${waiting.length})</span><button class="orders-refresh" onclick="renderOrdersTab('waitlist')">Refresh</button></div>${waiting.map(x=>{const r=x.data,typeLabel=r.type==='video'?'Video Call':r.type==='call'?'Audio Call':'Chat';return `<div class="orders-wait-card"><div class="ow-avatar">🧑‍🔮</div><div class="ow-info"><div class="ow-name">${r.userName||'User'}</div><div class="ow-meta">${typeLabel} · Waiting</div></div><div class="ow-actions"><button onclick="pickFromOrders('${x.id}')">Pick</button><button class="reject" onclick="rejectFromOrders('${x.id}')">Reject</button></div></div>`;}).join('')}`;
+  }
+
+  function makeHistoryCard(c,kind,ratePerMin,extra={}){
+    const created=c.createdAt?.toDate?c.createdAt.toDate():(c.calledAt?.toDate?c.calledAt.toDate():null),ended=c.endedAt?.toDate?c.endedAt.toDate():null;
+    const durationSec=kind==='call'?Number(c.duration||0):(created&&ended?Math.max(60,ended-created)/1000:0),mins=durationSec?Math.max(1,Math.round(durationSec/60)):0;
+    const durationText=mins?`${mins} min`:(c.status==='ended'?'Completed':'Ongoing'),earned=mins*ratePerMin*0.5;
+    const dateText=created?created.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'',bookingId='AG-'+String(extra.id||'').slice(0,6).toUpperCase();
+    const s=c.selfDetails||extra.selfDetails||{},dob=s.dobDisplay||s.dob||'',tob=s.tobDisplay||s.tob||'',pob=s.pob||'',isNew=extra.isNew!==undefined?extra.isNew:true;
+    const statusText=kind==='call'?'Completed ✓':(c.status==='ended'?'Completed ✓':'Ongoing'),statusColor=(kind==='call'||c.status==='ended')?'var(--green)':'var(--gold-text)';
+    const serviceLabel=kind==='call'?(c.type==='video'?'🎥 Video Call':'📞 Audio Call'):'🔮 Aangan';
+    return `<div class="orders-history-card"><div class="oh-top"><span style="font-size:12px;font-weight:700;color:${isNew?'#5FA8D3':'var(--gold-text)'};">${isNew?'New':'Repeat'}</span><span style="width:1px;height:12px;background:var(--line);"></span><span style="font-size:12px;font-weight:700;color:${statusColor};">${statusText}</span><span style="flex:1;"></span><span style="font-family:'Cinzel',serif;font-weight:700;color:var(--gold-text);font-size:14px;">₹${earned.toFixed(2)}</span></div>
+      <div class="oh-user"><div class="oh-avatar">${extra.photo?`<img src="${extra.photo}">`:'🧑'}</div><div style="min-width:0;"><div class="oh-name">${c.userName||'User'}</div><div class="oh-meta">${serviceLabel} · Aangan (#${bookingId})</div></div></div>
+      <div class="oh-meta" style="margin-bottom:8px;">${dateText}</div><div class="oh-details"><div><b>Name:</b> ${c.userName||'User'}${s.name?' ('+s.name+')':''}</div>${dob?`<div><b>DOB:</b> ${dob}${tob?', '+tob:''}</div>`:''}${pob?`<div><b>POB:</b> ${pob}</div>`:''}<div><b>Rate:</b> ₹${ratePerMin}/min</div><div><b>Duration:</b> ${durationText}</div></div>
+      <div class="oh-actions">${kind==='chat'?'<button data-action="open-chat">Open Chat</button>':'<button data-action="call-info">Call Details</button>'}<button data-action="kundli">Open Kundli</button><button data-action="remedy">Suggest Remedy</button></div></div>`;
+  }
+
+  async function renderOrdersChatHistory(){
+    const body=document.getElementById('orders-body');
+    try{const astro=await getDoc(doc(db,'astrologers',window.currentUid)),rate=parseFloat((astro.exists()&&astro.data().price)||0)||0,snap=await getDocs(query(collection(db,'chats'),where('astrologerId','==',window.currentUid)));
+      if(snap.empty){body.innerHTML='<div class="empty-state">No chats yet.</div>';return;}const rows=[];snap.forEach(d=>rows.push({id:d.id,...d.data()}));rows.sort((a,b)=>(b.createdAt?.toDate?.().getTime?.()||0)-(a.createdAt?.toDate?.().getTime?.()||0));
+      const first={};rows.slice().sort((a,b)=>(a.createdAt?.toDate?.().getTime?.()||0)-(b.createdAt?.toDate?.().getTime?.()||0)).forEach(c=>{if(c.userId&&!first[c.userId])first[c.userId]=c.id;});
+      body.innerHTML=`<div class="orders-section-title"><span>Chat History (${rows.length})</span><button class="orders-refresh" onclick="renderOrdersTab('chat')">Refresh</button></div>`;
+      rows.forEach(c=>{body.insertAdjacentHTML('beforeend',makeHistoryCard(c,'chat',rate,{id:c.id,isNew:c.userId?first[c.userId]===c.id:true,photo:c.photoURL}));const row=body.lastElementChild;row.querySelector('[data-action="open-chat"]').onclick=()=>openChatThread(c.id,c.userName||'User');row.querySelector('[data-action="kundli"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-kundli').click(),300);};row.querySelector('[data-action="remedy"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-remedies').click(),300);};});
+    }catch(e){body.innerHTML=`<div class="empty-state">Error: ${e.message}</div>`;}
+  }
+
+  async function renderOrdersCallHistory(){
+    const body=document.getElementById('orders-body');
+    try{const astro=await getDoc(doc(db,'astrologers',window.currentUid)),rate=parseFloat((astro.exists()&&astro.data().price)||0)||0,snap=await getDocs(query(collection(db,'calls'),where('astrologerId','==',window.currentUid)));
+      if(snap.empty){body.innerHTML='<div class="empty-state">No calls yet.</div>';return;}const rows=[];snap.forEach(d=>rows.push({id:d.id,...d.data()}));rows.sort((a,b)=>(b.calledAt?.toDate?.().getTime?.()||0)-(a.calledAt?.toDate?.().getTime?.()||0));
+      const first={};rows.slice().sort((a,b)=>(a.calledAt?.toDate?.().getTime?.()||0)-(b.calledAt?.toDate?.().getTime?.()||0)).forEach(c=>{if(c.userId&&!first[c.userId])first[c.userId]=c.id;});
+      body.innerHTML=`<div class="orders-section-title"><span>Call History (${rows.length})</span><button class="orders-refresh" onclick="renderOrdersTab('call')">Refresh</button></div>`;
+      rows.forEach(c=>{body.insertAdjacentHTML('beforeend',makeHistoryCard(c,'call',rate,{id:c.id,isNew:c.userId?first[c.userId]===c.id:true,selfDetails:c.selfDetails,photo:c.photoURL}));const row=body.lastElementChild;row.querySelector('[data-action="call-info"]').onclick=()=>alert(`${c.type==='video'?'Video Call':'Audio Call'}\nUser: ${c.userName||'User'}\nDuration: ${Math.max(1,Math.round((c.duration||0)/60))} min`);row.querySelector('[data-action="kundli"]').onclick=()=>{if(!c.requestId){alert('Kundli details are not linked to this older call record.');return;}window.currentChatId=c.requestId;openChatThread(c.requestId,c.userName||'User');setTimeout(()=>document.getElementById('tt-kundli').click(),300);};row.querySelector('[data-action="remedy"]').onclick=()=>{if(!c.requestId){alert('This older call does not have a linked request.');return;}window.currentChatId=c.requestId;openChatThread(c.requestId,c.userName||'User');setTimeout(()=>document.getElementById('tt-remedies').click(),300);};});
+    }catch(e){body.innerHTML=`<div class="empty-state">Error: ${e.message}</div>`;}
+  }
+  window.renderOrdersTab=renderOrdersTab;
 
   window.pickFromOrders = async function(reqId) {
     const reqSnap=await getDoc(doc(db,'requests',reqId));
