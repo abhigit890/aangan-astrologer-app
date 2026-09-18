@@ -2180,6 +2180,7 @@
     document.getElementById('vc-toggle-cam').style.display = isVideo ? 'flex' : 'none';
     document.getElementById('vc-flip-cam').style.display = isVideo ? 'flex' : 'none';
     document.getElementById('vc-speaker-btn').style.display = isVideo ? 'none' : 'flex';
+    document.getElementById('vc-toggle-mic').style.display = 'flex';
     activeCallOrderId = orderId;
     activeCallStartedAt = Date.now();
     updateDoc(doc(db, 'remedyOrders', orderId), { callStatus: 'live' }).catch(()=>{});
@@ -2283,11 +2284,15 @@
       window.isGeneralCall = false;
       document.getElementById('vc-call-info-panel').style.display = 'none';
       if (vcRemainingInterval) { clearInterval(vcRemainingInterval); vcRemainingInterval = null; }
+      const callSelfDetailsForSave = window.currentGeneralCallSelfDetails || null;
       window.currentGeneralCallSelfDetails = null;
-      if (isInitiator && activeCallStartedAt) {
+
+      // Save this call to history from the astrologer's own side, regardless
+      // of who pressed "End" first — it's our own session record either way.
+      if (activeCallStartedAt) {
         const durationSec = Math.round((Date.now() - activeCallStartedAt) / 1000);
         try {
-          let callSelfDetails = window.currentGeneralCallSelfDetails || null;
+          let callSelfDetails = callSelfDetailsForSave;
           let callPartnerDetails = null;
           if (activeCallOrderId) {
             try {
@@ -2311,10 +2316,12 @@
             partnerDetails: callPartnerDetails
           });
         } catch (e) { /* ignore */ }
-        if (activeCallOrderId) {
-          try {
-            await updateDoc(doc(db, 'requests', activeCallOrderId), { status: 'call_ended' });
-          } catch (e) { /* ignore */ }
+      }
+      if (activeCallOrderId) {
+        // Never revive this request again, whether on reload or otherwise.
+        await updateDoc(doc(db, 'requests', activeCallOrderId), { queueStatus: 'completed' }).catch(()=>{});
+        if (isInitiator) {
+          await updateDoc(doc(db, 'requests', activeCallOrderId), { status: 'call_ended' }).catch(()=>{});
         }
       }
       activeCallOrderId = null;
