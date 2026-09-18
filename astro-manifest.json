@@ -1,0 +1,24 @@
+{
+  "name": "Aangan Astrologer",
+  "short_name": "Aangan Astro",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0C0904",
+  "theme_color": "#D9A94F",
+  "icons": [
+    {
+      "src": "astro-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "astro-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
