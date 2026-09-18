@@ -1091,9 +1091,13 @@
       document.getElementById('end-chat-btn').style.display = (active||c.status==='waiting_user_acceptance') ? 'block' : 'none';
       document.getElementById('thread-input').placeholder = active ? 'Type a message...' : 'Waiting for user to accept...';
       if(c.status==='user_accepted' || c.requestUserAccepted===true){
-        await updateDoc(doc(db,'chats',chatId),{status:'active',startedAt:c.startedAt||serverTimestamp()});
-        const ms=await getDocs(query(collection(db,'chats',chatId,'messages'),where('systemEvent','==','chat_started'),limit(1)));
-        if(ms.empty) await addDoc(collection(db,'chats',chatId,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
+        if (!window.__startedChatsSent) window.__startedChatsSent = new Set();
+        if (!window.__startedChatsSent.has(chatId)) {
+          window.__startedChatsSent.add(chatId);
+          await updateDoc(doc(db,'chats',chatId),{status:'active',startedAt:c.startedAt||serverTimestamp()});
+          const ms=await getDocs(query(collection(db,'chats',chatId,'messages'),where('systemEvent','==','chat_started'),limit(1)));
+          if(ms.empty) await addDoc(collection(db,'chats',chatId,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
+        }
       }
       if(c.status==='ended' && c.endReason==='user_cancelled'){
         document.getElementById('thread-input').disabled=true;
@@ -1268,12 +1272,14 @@
     const cs=await getDoc(doc(db,'chats',window.currentChatId));
     if(!cs.exists() || cs.data().status!=='active') return;
     input.value = '';
+    input.focus();
     await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
       text, senderType: 'astrologer', senderId: window.currentUid, sentAt: serverTimestamp()
     });
     await setDoc(doc(db, 'chats', window.currentChatId), {
       lastMessage: text, lastMessageAt: serverTimestamp()
     }, { merge: true });
+    input.focus();
   }
 
   document.getElementById('end-chat-btn').addEventListener('click', async () => {
@@ -3248,8 +3254,12 @@
           continue;
         }
         if(c.status!=='active') await updateDoc(cRef,{status:'active',requestUserAccepted:true,startedAt:c.startedAt||serverTimestamp()});
-        const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_started'),limit(1)));
-        if(ms.empty) await addDoc(collection(db,'chats',d.id,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
+        if (!window.__startedChatsSent) window.__startedChatsSent = new Set();
+        if (!window.__startedChatsSent.has(d.id)) {
+          window.__startedChatsSent.add(d.id);
+          const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_started'),limit(1)));
+          if(ms.empty) await addDoc(collection(db,'chats',d.id,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
+        }
         await updateDoc(doc(db,'requests',d.id),{queueStatus:'completed'}).catch(()=>{});
         // Don't force-navigate the astrologer's screen — just update the data.
         // They'll see it via the Ongoing Chat bar / Orders tab and can open it themselves.
@@ -3341,13 +3351,19 @@
       <div class="oh-actions">${kind==='chat'?'<button data-action="open-chat">Open Chat</button>':'<button data-action="call-info">Call Details</button>'}<button data-action="kundli">Open Kundli</button><button data-action="remedy">Suggest Remedy</button></div></div>`;
   }
 
+  let ordersChatHistoryUnsub = null;
   async function renderOrdersChatHistory(){
     const body=document.getElementById('orders-body');
-    try{const astro=await getDoc(doc(db,'astrologers',window.currentUid)),rate=parseFloat((astro.exists()&&astro.data().price)||0)||0,snap=await getDocs(query(collection(db,'chats'),where('astrologerId','==',window.currentUid)));
-      if(snap.empty){body.innerHTML='<div class="empty-state">No chats yet.</div>';return;}const rows=[];snap.forEach(d=>rows.push({id:d.id,...d.data()}));rows.sort((a,b)=>(b.createdAt?.toDate?.().getTime?.()||0)-(a.createdAt?.toDate?.().getTime?.()||0));
-      const first={};rows.slice().sort((a,b)=>(a.createdAt?.toDate?.().getTime?.()||0)-(b.createdAt?.toDate?.().getTime?.()||0)).forEach(c=>{if(c.userId&&!first[c.userId])first[c.userId]=c.id;});
-      body.innerHTML=`<div class="orders-section-title"><span>Chat History (${rows.length})</span><button class="orders-refresh" onclick="renderOrdersTab('chat')">Refresh</button></div>`;
-      rows.forEach(c=>{body.insertAdjacentHTML('beforeend',makeHistoryCard(c,'chat',rate,{id:c.id,isNew:c.userId?first[c.userId]===c.id:true,photo:c.photoURL}));const row=body.lastElementChild;row.querySelector('[data-action="open-chat"]').onclick=()=>openChatThread(c.id,c.userName||'User');row.querySelector('[data-action="kundli"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-kundli').click(),300);};row.querySelector('[data-action="remedy"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-remedies').click(),300);};});
+    body.innerHTML='<div class="empty-state">Loading...</div>';
+    if (ordersChatHistoryUnsub) { ordersChatHistoryUnsub(); ordersChatHistoryUnsub = null; }
+    try{
+      const astro=await getDoc(doc(db,'astrologers',window.currentUid)),rate=parseFloat((astro.exists()&&astro.data().price)||0)||0;
+      ordersChatHistoryUnsub = onSnapshot(query(collection(db,'chats'),where('astrologerId','==',window.currentUid)), (snap) => {
+        if(snap.empty){body.innerHTML='<div class="empty-state">No chats yet.</div>';return;}const rows=[];snap.forEach(d=>rows.push({id:d.id,...d.data()}));rows.sort((a,b)=>(b.createdAt?.toDate?.().getTime?.()||0)-(a.createdAt?.toDate?.().getTime?.()||0));
+        const first={};rows.slice().sort((a,b)=>(a.createdAt?.toDate?.().getTime?.()||0)-(b.createdAt?.toDate?.().getTime?.()||0)).forEach(c=>{if(c.userId&&!first[c.userId])first[c.userId]=c.id;});
+        body.innerHTML=`<div class="orders-section-title"><span>Chat History (${rows.length})</span></div>`;
+        rows.forEach(c=>{body.insertAdjacentHTML('beforeend',makeHistoryCard(c,'chat',rate,{id:c.id,isNew:c.userId?first[c.userId]===c.id:true,photo:c.photoURL}));const row=body.lastElementChild;row.querySelector('[data-action="open-chat"]').onclick=()=>openChatThread(c.id,c.userName||'User');row.querySelector('[data-action="kundli"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-kundli').click(),300);};row.querySelector('[data-action="remedy"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-remedies').click(),300);};});
+      }, (err) => { body.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`; });
     }catch(e){body.innerHTML=`<div class="empty-state">Error: ${e.message}</div>`;}
   }
 
