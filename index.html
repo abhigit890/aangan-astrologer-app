@@ -1090,7 +1090,7 @@
       document.getElementById('thread-send').disabled = !active;
       document.getElementById('end-chat-btn').style.display = (active||c.status==='waiting_user_acceptance') ? 'block' : 'none';
       document.getElementById('thread-input').placeholder = active ? 'Type a message...' : 'Waiting for user to accept...';
-      if(c.status==='user_accepted' || c.requestUserAccepted===true){
+      if(c.status!=='ended' && (c.status==='user_accepted' || c.requestUserAccepted===true)){
         if (!window.__startedChatsSent) window.__startedChatsSent = new Set();
         if (!window.__startedChatsSent.has(chatId)) {
           window.__startedChatsSent.add(chatId);
