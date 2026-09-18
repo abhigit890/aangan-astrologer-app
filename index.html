@@ -822,6 +822,12 @@
 </div>
 
 <!-- INCOMING REMEDY CALL OVERLAY -->
+<!-- PHOTO VIEWER -->
+<div id="photo-viewer-overlay" style="display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.95); align-items:center; justify-content:center; overflow:hidden; touch-action:none;">
+  <span id="photo-viewer-close" style="position:absolute; top:16px; right:20px; color:#fff; font-size:30px; cursor:pointer; z-index:301;">✕</span>
+  <img id="photo-viewer-img" style="max-width:100%; max-height:100%; transform-origin:center center; touch-action:none; user-select:none;">
+</div>
+
 <div id="incoming-remedy-overlay" style="display:none; position:fixed; inset:0; background:rgba(4,2,1,0.96); z-index:110; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px;">
   <div class="ring-avatar">🙏</div>
   <div class="req-type" id="rc-req-type">Remedy Performance Call</div>
@@ -1211,7 +1217,7 @@
           updateDoc(doc(db, 'chats', chatId, 'messages', d.id), { delivered: true, read: true }).catch(()=>{});
         }
         if (m.photo) {
-          bubble.innerHTML = `<img src="${m.photo}" style="width:100%; border-radius:8px;"><span class="ts">${time}${ticks}</span>`;
+          bubble.innerHTML = `<img src="${m.photo}" style="width:100%; border-radius:8px; cursor:pointer;" onclick="openPhotoViewer('${m.photo.replace(/'/g,"\\'")}')"><span class="ts">${time}${ticks}</span>`;
         } else if (m.voiceNote) {
           bubble.innerHTML = `<audio controls src="${m.voiceNote}" style="max-width:210px;"></audio><span class="ts">${time}${ticks}</span>`;
         } else {
@@ -1369,6 +1375,63 @@
       });
     });
   }
+
+  // ---- Full-screen photo viewer with zoom ----
+  let pvScale = 1, pvPanX = 0, pvPanY = 0;
+  let pvLastDist = null, pvDragging = false, pvDragStart = null;
+
+  window.openPhotoViewer = function(src) {
+    const img = document.getElementById('photo-viewer-img');
+    img.src = src;
+    pvScale = 1; pvPanX = 0; pvPanY = 0;
+    img.style.transform = 'translate(0px,0px) scale(1)';
+    document.getElementById('photo-viewer-overlay').style.display = 'flex';
+  };
+
+  function pvApplyTransform() {
+    document.getElementById('photo-viewer-img').style.transform = `translate(${pvPanX}px,${pvPanY}px) scale(${pvScale})`;
+  }
+
+  document.getElementById('photo-viewer-close').addEventListener('click', () => {
+    document.getElementById('photo-viewer-overlay').style.display = 'none';
+  });
+  (function(){
+    const img = document.getElementById('photo-viewer-img');
+    img.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      pvScale = Math.min(5, Math.max(1, pvScale - e.deltaY * 0.002));
+      pvApplyTransform();
+    });
+    img.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        pvLastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      } else if (e.touches.length === 1) {
+        pvDragging = true;
+        pvDragStart = { x: e.touches[0].clientX - pvPanX, y: e.touches[0].clientY - pvPanY };
+      }
+    }, { passive: true });
+    img.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && pvLastDist != null) {
+        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        pvScale = Math.min(5, Math.max(1, pvScale * (dist / pvLastDist)));
+        pvLastDist = dist;
+        pvApplyTransform();
+      } else if (e.touches.length === 1 && pvDragging && pvScale > 1) {
+        pvPanX = e.touches[0].clientX - pvDragStart.x;
+        pvPanY = e.touches[0].clientY - pvDragStart.y;
+        pvApplyTransform();
+      }
+    }, { passive: true });
+    img.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) pvLastDist = null;
+      if (e.touches.length === 0) pvDragging = false;
+    });
+    img.addEventListener('dblclick', () => {
+      pvScale = pvScale > 1 ? 1 : 2;
+      pvPanX = 0; pvPanY = 0;
+      pvApplyTransform();
+    });
+  })();
 
   async function suggestRemedyToUser(remedyId, r) {
     if (window.isGeneralCall && window.currentGeneralCallUserId) {
@@ -3244,7 +3307,7 @@
   }
 
   async function showNextWaitingRequest() {
-    if (!window.currentUid || window.currentChatId) return;
+    if (!window.currentUid || window.currentChatId || activeCallOrderId) return;
     if (Date.now() < nextRequestReadyAt) return;
     const overlay = document.getElementById('incoming-overlay');
     if (overlay && overlay.style.display === 'flex') return;
@@ -3254,7 +3317,7 @@
       const waiting = [];
       snap.forEach(d => {
         const r=d.data()||{};
-        if(r.type==='chat' && r.queueStatus==='waiting' && r.status!=='ended' && r.status!=='declined') {
+        if(r.queueStatus==='waiting' && r.status!=='ended' && r.status!=='declined') {
           waiting.push({id:d.id,...r});
         }
       });
@@ -3270,14 +3333,16 @@
       lastIncomingRequestId=item.id;
       currentRequestId=item.id;
       currentRequestData=item;
-      document.getElementById('req-type').textContent='Incoming Chat';
+      const isCall = item.type==='call'||item.type==='video';
+      document.getElementById('req-type').textContent = isCall ? ('Incoming ' + (item.type==='video'?'Video Call':'Call')) : 'Incoming Chat';
       document.getElementById('req-name').textContent=item.userName||'User';
-      document.getElementById('req-start-label').textContent='Start Chat';
+      document.getElementById('req-start-label').textContent = isCall ? (item.type==='video'?'Start Video Call':'Start Call') : 'Start Chat';
       document.getElementById('incoming-overlay').style.display='flex';
       startRing();
       startReqCountdown();
     } catch(e) {
       console.error('Next waiting chat error:',e);
+      alert('Ring error: ' + e.message);
     }
   }
 
@@ -3286,7 +3351,7 @@
     onSnapshot(q, async (snap)=>{
       const waitingChats=snap.docs
         .map(d=>({id:d.id,data:d.data()||{}}))
-        .filter(x=>x.data.type==='chat' && x.data.queueStatus==='waiting' && x.data.status!=='ended' && x.data.status!=='declined')
+        .filter(x=>x.data.queueStatus==='waiting' && x.data.status!=='ended' && x.data.status!=='declined')
         .sort((a,b)=>{
           const ta=a.data.createdAt?.toDate ? a.data.createdAt.toDate().getTime() : 0;
           const tb=b.data.createdAt?.toDate ? b.data.createdAt.toDate().getTime() : 0;
@@ -3349,7 +3414,7 @@
       }
 
       // 3) New waiting request: ring immediately if astrologer is free.
-      if(!window.currentChatId && !currentRequestId && waitingChats.length && Date.now()>=nextRequestReadyAt){
+      if(!window.currentChatId && !currentRequestId && !activeCallOrderId && waitingChats.length && Date.now()>=nextRequestReadyAt){
         await showNextWaitingRequest();
       }
 
@@ -3522,9 +3587,11 @@
     if(!reqSnap.exists()) return;
     const r=reqSnap.data();
     if(r.type !== 'chat'){
-      window.isGeneralCall = true;
-      await updateDoc(doc(db,'requests',reqId),{queueStatus:'astrologer_accepted',astrologerAcceptedAt:serverTimestamp()});
-      showAstrologerCallWaiting(r.userName||'User');
+      // Route through the exact same acceptance logic the auto-ring uses,
+      // so there is only ever one code path handling a call pickup.
+      currentRequestId = reqId;
+      currentRequestData = r;
+      document.getElementById('req-accept').click();
       return;
     }
     await setDoc(doc(db,'chats',reqId),{astrologerId:window.currentUid,userId:r.userId||null,userName:r.userName||'User',status:'waiting_user_acceptance',createdAt:serverTimestamp(),lastMessage:'',lastMessageAt:serverTimestamp(),selfDetails:r.selfDetails||null},{merge:true});
@@ -3577,6 +3644,14 @@
       await sendKundliDetailsMessage(reqId, reqData.selfDetails);
       await updateDoc(doc(db,'requests',reqId),{queueStatus:'astrologer_accepted',astrologerAcceptedAt:serverTimestamp()});
       openChatThread(reqId,reqData.userName||'User');
+    } else if (reqData && (reqData.type==='call' || reqData.type==='video')) {
+      window.isGeneralCall = true;
+      window.currentGeneralCallUserId = reqData.userId || null;
+      window.currentGeneralCallUserName = reqData.userName || 'User';
+      window.currentGeneralCallType = reqData.type;
+      window.currentGeneralCallSelfDetails = reqData.selfDetails || null;
+      await updateDoc(doc(db,'requests',reqId),{queueStatus:'astrologer_accepted',astrologerAcceptedAt:serverTimestamp()});
+      showAstrologerCallWaiting(reqData.userName||'User');
     }
     currentRequestId=null; currentRequestData=null;
   });
