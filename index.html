@@ -988,8 +988,9 @@
       }
       if (!selfSnap || !selfSnap.exists()) {
         await signOut(auth);
-        loginCard.style.display = 'block';
+        document.querySelectorAll('.sub-screen').forEach(s => s.style.display = 'none');
         dashboard.style.display = 'none';
+        loginCard.style.display = 'block';
         statusMsg.textContent = 'This account is not registered as an astrologer. Please contact Kinnar Talk support.';
         return;
       }
@@ -1017,8 +1018,12 @@
       startOrdersCountListener(user.uid);
       startRemedyCallListener(user.uid);
     } else {
-      loginCard.style.display = 'block';
+      // Hide EVERY screen (dashboard + any open sub-screen like Settings/Account/Chat)
+      // before showing the login card — otherwise whatever screen was open when the
+      // astrologer logged out stays visible underneath/behind the login card.
+      document.querySelectorAll('.sub-screen').forEach(s => s.style.display = 'none');
       dashboard.style.display = 'none';
+      loginCard.style.display = 'block';
     }
   });
 
