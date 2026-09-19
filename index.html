@@ -1025,6 +1025,15 @@
       startOrdersCountListener(user.uid);
       startRemedyCallListener(user.uid);
     } else {
+      // Stop every live Firestore listener that was only valid for the signed-in
+      // astrologer. Once signed out, these listeners' security-rule checks start
+      // failing ("Missing or insufficient permissions"), and the remedy-ring
+      // listener specifically shows that as an alert popup on logout — so it must
+      // be torn down here, not just left to fail silently in the background.
+      if (remedyRingUnsub) { remedyRingUnsub(); remedyRingUnsub = null; }
+      currentIncomingRemedyOrderId = null;
+      document.getElementById('incoming-remedy-overlay').style.display = 'none';
+      try { stopRing(); } catch (e) { /* ignore */ }
       // Hide EVERY screen (dashboard + any open sub-screen like Settings/Account/Chat)
       // before showing the login card — otherwise whatever screen was open when the
       // astrologer logged out stays visible underneath/behind the login card.
