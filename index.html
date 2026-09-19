@@ -1014,6 +1014,13 @@
         const dot = document.getElementById('header-dot');
         if (dot) dot.classList.toggle('live', anyOn);
       } catch (e) { /* non-fatal — switches just stay at their default state */ }
+      // A "busy" (on a session) state can only ever be real inside the live in-memory
+      // chat/call screen of THIS browser tab — it is never restored from Firestore on
+      // reload. So if the browser was closed/refreshed/crashed while a chat or call was
+      // open, isBusy can get stuck "true" forever with no code path left to clear it.
+      // Every fresh login/session-restore is guaranteed to start with no chat/call screen
+      // open, so it's always correct to force isBusy back to false here.
+      updateDoc(doc(db, 'astrologers', user.uid), { isBusy: false }).catch(()=>{});
       startRequestListener(user.uid);
       startOrdersCountListener(user.uid);
       startRemedyCallListener(user.uid);
@@ -2166,8 +2173,35 @@
     document.getElementById('tv-player-wrap').innerHTML = '';
   };
 
+  // If the astrologer logs out while a chat or call is actively running, end that
+  // session properly first — otherwise it would stay stuck "active" in Firestore
+  // forever, leaving the user waiting with no idea the astrologer is gone.
+  async function endActiveSessionBeforeLogout() {
+    if (window.currentChatId) {
+      try {
+        const cid = window.currentChatId;
+        const mySnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+        const myName = (mySnap.exists() && mySnap.data().name) || 'Astrologer';
+        await updateDoc(doc(db, 'chats', cid), {
+          status: 'ended', endReason: 'astrologer', endedByType: 'astrologer',
+          endedByName: myName, endedAt: serverTimestamp()
+        });
+        await addDoc(collection(db, 'chats', cid, 'messages'), {
+          text: `This chat has been ended because ${myName} logged out.`,
+          senderType: 'system', endReason: 'astrologer', sentAt: serverTimestamp()
+        });
+        window.currentChatId = null;
+        window.currentChatUserName = null;
+      } catch (e) { /* non-fatal — the chat may just be left for the user to see as inactive */ }
+    }
+    if (typeof activeCallOrderId !== 'undefined' && activeCallOrderId) {
+      try { await cleanupAndExitCall(true); } catch (e) { /* non-fatal */ }
+    }
+  }
+
   document.getElementById('set-logout-btn').addEventListener('click', async () => {
     if (trainingVideosUnsub) { trainingVideosUnsub(); trainingVideosUnsub = null; }
+    await endActiveSessionBeforeLogout();
     await signOut(auth);
     document.getElementById('email').value = '';
     document.getElementById('password').value = '';
