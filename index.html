@@ -908,11 +908,15 @@
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
       const uid = result.user.uid;
+      // Only seed the online-toggle fields the very first time this astrologer's doc is
+      // created (e.g. their very first login). On every later login/refresh we must NOT
+      // overwrite chatOnline/callOnline/videoOnline, or a returning astrologer who was
+      // online gets silently flipped offline just by logging back in.
+      const existingSnap = await getDoc(doc(db, 'astrologers', uid));
+      const seedFields = existingSnap.exists() ? {} : { chatOnline: false, callOnline: false, videoOnline: false };
       await setDoc(doc(db, 'astrologers', uid), {
         email: result.user.email,
-        chatOnline: false,
-        callOnline: false,
-        videoOnline: false,
+        ...seedFields,
         updatedAt: serverTimestamp()
       }, { merge: true });
       statusMsg.textContent = '';
@@ -923,13 +927,29 @@
 
   const toggleState = { chatOnline:false, callOnline:false, videoOnline:false };
 
-  onAuthStateChanged(auth, (user) => {
+  onAuthStateChanged(auth, async (user) => {
     if (user) {
       loginCard.style.display = 'none';
       dashboard.style.display = 'block';
       document.getElementById('header-name').textContent = user.email.split('@')[0];
       document.getElementById('header-uid').textContent = 'ID: ' + user.uid.slice(0,8);
       window.currentUid = user.uid;
+      // Reflect the astrologer's actual saved online-toggle state in the switches —
+      // this JS object starts out all-false on every page load/refresh, so without this
+      // the switches would visually show "offline" even though Firestore (and therefore
+      // the User App) still correctly has the astrologer online.
+      try {
+        const selfSnap = await getDoc(doc(db, 'astrologers', user.uid));
+        const selfData = selfSnap.exists() ? selfSnap.data() : {};
+        ['chatOnline', 'callOnline', 'videoOnline'].forEach(field => {
+          toggleState[field] = !!selfData[field];
+          const sw = document.querySelector(`.switch[data-field="${field}"]`);
+          if (sw) sw.classList.toggle('on', toggleState[field]);
+        });
+        const anyOn = Object.values(toggleState).some(v => v);
+        const dot = document.getElementById('header-dot');
+        if (dot) dot.classList.toggle('live', anyOn);
+      } catch (e) { /* non-fatal — switches just stay at their default state */ }
       startRequestListener(user.uid);
       startOrdersCountListener(user.uid);
       startRemedyCallListener(user.uid);
@@ -3429,6 +3449,26 @@
     if (reqCountdownInterval) { clearInterval(reqCountdownInterval); reqCountdownInterval = null; }
   }
 
+  // Astrologer didn't pick up a chat/call/video request in time (or explicitly rejected
+  // it) — mark the request as missed by the astrologer, and automatically flip the
+  // matching online toggle (chat/call/video) off so the astrologer stops showing as
+  // available for that mode in the User App until they turn it back on themselves.
+  async function markAstrologerMissed(reqId, reqType) {
+    try {
+      await updateDoc(doc(db, 'requests', reqId), { missedBy: 'astrologer', missedAt: serverTimestamp() });
+    } catch (e) { /* non-fatal */ }
+    const field = reqType === 'video' ? 'videoOnline' : reqType === 'call' ? 'callOnline' : 'chatOnline';
+    try {
+      await updateDoc(doc(db, 'astrologers', window.currentUid), { [field]: false, updatedAt: serverTimestamp() });
+      toggleState[field] = false;
+      const sw = document.querySelector(`.switch[data-field="${field}"]`);
+      if (sw) sw.classList.remove('on');
+      const anyOn = Object.values(toggleState).some(v => v);
+      const dot = document.getElementById('header-dot');
+      if (dot) dot.classList.toggle('live', anyOn);
+    } catch (e) { /* non-fatal */ }
+  }
+
   // ---- Chat request queue listener ----
   // Only one Firestore where() is used; the remaining queue/status checks are
   // done locally so this flow does not require a composite index.
@@ -3535,6 +3575,25 @@
           window.currentChatId=null;
           window.currentChatUserName=null;
           lastIncomingRequestId=null;
+          scheduleNextWaitingRequest(5000);
+        }
+      }
+
+      // 1b) User cancelled a call/video request after this astrologer had already
+      // accepted it (while the astrologer was on the "waiting for user to join" screen).
+      // There's no `chats` doc for calls, so this is handled separately — just tag the
+      // request as missed-by-user (for history) and, if it's the call we're currently
+      // waiting on, back out of the waiting screen.
+      if (!window.__handledUserCancelledCalls) window.__handledUserCancelledCalls = new Set();
+      for (const d of snap.docs) {
+        const r = d.data() || {};
+        if (r.queueStatus !== 'user_declined' || r.type === 'chat') continue;
+        if (window.__handledUserCancelledCalls.has(d.id)) continue;
+        window.__handledUserCancelledCalls.add(d.id);
+        await updateDoc(doc(db, 'requests', d.id), { missedBy: 'user' }).catch(()=>{});
+        if (activeCallOrderId === d.id) {
+          activeCallOrderId = null;
+          showScreen('dashboard');
           scheduleNextWaitingRequest(5000);
         }
       }
@@ -3675,12 +3734,25 @@
     const durationText=mins?`${mins} min`:(c.status==='ended'?'Completed':'Ongoing'),earned=mins*ratePerMin*0.5;
     const dateText=created?created.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'',bookingId='AG-'+String(extra.id||'').slice(0,6).toUpperCase();
     const s=c.selfDetails||extra.selfDetails||{},dob=s.dobDisplay||s.dob||'',tob=s.tobDisplay||s.tob||'',pob=s.pob||'',isNew=extra.isNew!==undefined?extra.isNew:true;
-    const statusText=kind==='call'?'Completed ✓':(c.status==='ended'?'Completed ✓':'Ongoing'),statusColor=(kind==='call'||c.status==='ended')?'var(--green)':'var(--gold-text)';
+    const wasMissedByUser = c.endReason === 'user_cancelled';
+    const statusText=wasMissedByUser?'Missed by User':(kind==='call'?'Completed ✓':(c.status==='ended'?'Completed ✓':'Ongoing'));
+    const statusColor=wasMissedByUser?'#C15B54':((kind==='call'||c.status==='ended')?'var(--green)':'var(--gold-text)');
     const serviceLabel=kind==='call'?(c.type==='video'?'🎥 Video Call':'📞 Audio Call'):'🔮 Kinnar Talk';
     return `<div class="orders-history-card"><div class="oh-top"><span style="font-size:12px;font-weight:700;color:${isNew?'#5FA8D3':'var(--gold-text)'};">${isNew?'New':'Repeat'}</span><span style="width:1px;height:12px;background:var(--line);"></span><span style="font-size:12px;font-weight:700;color:${statusColor};">${statusText}</span><span style="flex:1;"></span><span style="font-family:'Cinzel',serif;font-weight:700;color:var(--gold-text);font-size:14px;">₹${earned.toFixed(2)}</span></div>
       <div class="oh-user"><div class="oh-avatar">${extra.photo?`<img src="${extra.photo}">`:'🧑'}</div><div style="min-width:0;"><div class="oh-name">${c.userName||'User'}</div><div class="oh-meta">${serviceLabel} · Kinnar Talk (#${bookingId})</div></div></div>
       <div class="oh-meta" style="margin-bottom:8px;">${dateText}</div><div class="oh-details"><div><b>Name:</b> ${c.userName||'User'}${s.name?' ('+s.name+')':''}</div>${dob?`<div><b>DOB:</b> ${dob}${tob?', '+tob:''}</div>`:''}${pob?`<div><b>POB:</b> ${pob}</div>`:''}<div><b>Rate:</b> ₹${ratePerMin}/min</div><div><b>Duration:</b> ${durationText}</div></div>
       <div class="oh-actions">${kind==='chat'?'<button data-action="open-chat">Open Chat</button>':'<button data-action="call-info">Call Details</button>'}<button data-action="kundli">Open Kundli</button><button data-action="remedy">Suggest Remedy</button></div></div>`;
+  }
+
+  // A request the astrologer never picked up (declined or the 30-second ring timed out)
+  // never gets a `chats`/`calls` doc, so it needs its own lightweight history card.
+  function makeMissedHistoryCard(r) {
+    const created = r.createdAt?.toDate ? r.createdAt.toDate() : null;
+    const dateText = created ? created.toLocaleString('en-IN', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    const serviceLabel = r.type === 'video' ? '🎥 Video Call' : r.type === 'call' ? '📞 Audio Call' : '🔮 Kinnar Talk';
+    return `<div class="orders-history-card"><div class="oh-top"><span style="font-size:12px;font-weight:700;color:#C15B54;">Missed by Astrologer</span><span style="flex:1;"></span></div>
+      <div class="oh-user"><div class="oh-avatar">🧑</div><div style="min-width:0;"><div class="oh-name">${r.userName || 'User'}</div><div class="oh-meta">${serviceLabel}</div></div></div>
+      <div class="oh-meta">${dateText}</div></div>`;
   }
 
   let ordersChatHistoryUnsub = null;
@@ -3690,11 +3762,28 @@
     if (ordersChatHistoryUnsub) { ordersChatHistoryUnsub(); ordersChatHistoryUnsub = null; }
     try{
       const astro=await getDoc(doc(db,'astrologers',window.currentUid)),rate=parseFloat((astro.exists()&&astro.data().price)||0)||0;
-      ordersChatHistoryUnsub = onSnapshot(query(collection(db,'chats'),where('astrologerId','==',window.currentUid)), (snap) => {
-        if(snap.empty){body.innerHTML='<div class="empty-state">No chats yet.</div>';return;}const rows=[];snap.forEach(d=>rows.push({id:d.id,...d.data()}));rows.sort((a,b)=>(b.createdAt?.toDate?.().getTime?.()||0)-(a.createdAt?.toDate?.().getTime?.()||0));
+      ordersChatHistoryUnsub = onSnapshot(query(collection(db,'chats'),where('astrologerId','==',window.currentUid)), async (snap) => {
+        const rows=[];snap.forEach(d=>rows.push({id:d.id,...d.data()}));
+        let missed=[];
+        try{
+          const missedSnap=await getDocs(query(collection(db,'requests'),where('astrologerId','==',window.currentUid)));
+          missed=missedSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>r.type==='chat'&&r.missedBy==='astrologer');
+        }catch(e){}
+        if(!rows.length && !missed.length){body.innerHTML='<div class="empty-state">No chats yet.</div>';return;}
+        rows.sort((a,b)=>(b.createdAt?.toDate?.().getTime?.()||0)-(a.createdAt?.toDate?.().getTime?.()||0));
         const first={};rows.slice().sort((a,b)=>(a.createdAt?.toDate?.().getTime?.()||0)-(b.createdAt?.toDate?.().getTime?.()||0)).forEach(c=>{if(c.userId&&!first[c.userId])first[c.userId]=c.id;});
-        body.innerHTML=`<div class="orders-section-title"><span>Chat History (${rows.length})</span></div>`;
-        rows.forEach(c=>{body.insertAdjacentHTML('beforeend',makeHistoryCard(c,'chat',rate,{id:c.id,isNew:c.userId?first[c.userId]===c.id:true,photo:c.photoURL}));const row=body.lastElementChild;row.querySelector('[data-action="open-chat"]').onclick=()=>openChatThread(c.id,c.userName||'User');row.querySelector('[data-action="kundli"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-kundli').click(),300);};row.querySelector('[data-action="remedy"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-remedies').click(),300);};});
+        const combined=[...rows.map(c=>({kind:'chat',c})),...missed.map(r=>({kind:'missed',r}))].sort((a,b)=>{
+          const ta=(a.kind==='chat'?a.c.createdAt:a.r.createdAt)?.toDate?.().getTime?.()||0;
+          const tb=(b.kind==='chat'?b.c.createdAt:b.r.createdAt)?.toDate?.().getTime?.()||0;
+          return tb-ta;
+        });
+        body.innerHTML=`<div class="orders-section-title"><span>Chat History (${combined.length})</span></div>`;
+        combined.forEach(item=>{
+          if(item.kind==='missed'){ body.insertAdjacentHTML('beforeend', makeMissedHistoryCard(item.r)); return; }
+          const c=item.c;
+          body.insertAdjacentHTML('beforeend',makeHistoryCard(c,'chat',rate,{id:c.id,isNew:c.userId?first[c.userId]===c.id:true,photo:c.photoURL}));
+          const row=body.lastElementChild;row.querySelector('[data-action="open-chat"]').onclick=()=>openChatThread(c.id,c.userName||'User');row.querySelector('[data-action="kundli"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-kundli').click(),300);};row.querySelector('[data-action="remedy"]').onclick=()=>{openChatThread(c.id,c.userName||'User');setTimeout(()=>document.getElementById('tt-remedies').click(),300);};
+        });
       }, (err) => { body.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`; });
     }catch(e){body.innerHTML=`<div class="empty-state">Error: ${e.message}</div>`;}
   }
@@ -3702,10 +3791,27 @@
   async function renderOrdersCallHistory(){
     const body=document.getElementById('orders-body');
     try{const astro=await getDoc(doc(db,'astrologers',window.currentUid)),rate=parseFloat((astro.exists()&&astro.data().price)||0)||0,snap=await getDocs(query(collection(db,'calls'),where('astrologerId','==',window.currentUid)));
-      if(snap.empty){body.innerHTML='<div class="empty-state">No calls yet.</div>';return;}const rows=[];snap.forEach(d=>rows.push({id:d.id,...d.data()}));rows.sort((a,b)=>(b.calledAt?.toDate?.().getTime?.()||0)-(a.calledAt?.toDate?.().getTime?.()||0));
+      const rows=[];snap.forEach(d=>rows.push({id:d.id,...d.data()}));
+      let missed=[];
+      try{
+        const missedSnap=await getDocs(query(collection(db,'requests'),where('astrologerId','==',window.currentUid)));
+        missed=missedSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>(r.type==='call'||r.type==='video')&&r.missedBy==='astrologer');
+      }catch(e){}
+      if(!rows.length && !missed.length){body.innerHTML='<div class="empty-state">No calls yet.</div>';return;}
+      rows.sort((a,b)=>(b.calledAt?.toDate?.().getTime?.()||0)-(a.calledAt?.toDate?.().getTime?.()||0));
       const first={};rows.slice().sort((a,b)=>(a.calledAt?.toDate?.().getTime?.()||0)-(b.calledAt?.toDate?.().getTime?.()||0)).forEach(c=>{if(c.userId&&!first[c.userId])first[c.userId]=c.id;});
-      body.innerHTML=`<div class="orders-section-title"><span>Call History (${rows.length})</span><button class="orders-refresh" onclick="renderOrdersTab('call')">Refresh</button></div>`;
-      rows.forEach(c=>{body.insertAdjacentHTML('beforeend',makeHistoryCard(c,'call',rate,{id:c.id,isNew:c.userId?first[c.userId]===c.id:true,selfDetails:c.selfDetails,photo:c.photoURL}));const row=body.lastElementChild;row.querySelector('[data-action="call-info"]').onclick=()=>alert(`${c.type==='video'?'Video Call':'Audio Call'}\nUser: ${c.userName||'User'}\nDuration: ${Math.max(1,Math.round((c.duration||0)/60))} min`);row.querySelector('[data-action="kundli"]').onclick=()=>{if(!c.requestId){alert('Kundli details are not linked to this older call record.');return;}window.currentChatId=c.requestId;openChatThread(c.requestId,c.userName||'User');setTimeout(()=>document.getElementById('tt-kundli').click(),300);};row.querySelector('[data-action="remedy"]').onclick=()=>{if(!c.requestId){alert('This older call does not have a linked request.');return;}window.currentChatId=c.requestId;openChatThread(c.requestId,c.userName||'User');setTimeout(()=>document.getElementById('tt-remedies').click(),300);};});
+      const combined=[...rows.map(c=>({kind:'call',c})),...missed.map(r=>({kind:'missed',r}))].sort((a,b)=>{
+        const ta=(a.kind==='call'?a.c.calledAt:a.r.createdAt)?.toDate?.().getTime?.()||0;
+        const tb=(b.kind==='call'?b.c.calledAt:b.r.createdAt)?.toDate?.().getTime?.()||0;
+        return tb-ta;
+      });
+      body.innerHTML=`<div class="orders-section-title"><span>Call History (${combined.length})</span><button class="orders-refresh" onclick="renderOrdersTab('call')">Refresh</button></div>`;
+      combined.forEach(item=>{
+        if(item.kind==='missed'){ body.insertAdjacentHTML('beforeend', makeMissedHistoryCard(item.r)); return; }
+        const c=item.c;
+        body.insertAdjacentHTML('beforeend',makeHistoryCard(c,'call',rate,{id:c.id,isNew:c.userId?first[c.userId]===c.id:true,selfDetails:c.selfDetails,photo:c.photoURL}));
+        const row=body.lastElementChild;row.querySelector('[data-action="call-info"]').onclick=()=>alert(`${c.type==='video'?'Video Call':'Audio Call'}\nUser: ${c.userName||'User'}\nDuration: ${Math.max(1,Math.round((c.duration||0)/60))} min`);row.querySelector('[data-action="kundli"]').onclick=()=>{if(!c.requestId){alert('Kundli details are not linked to this older call record.');return;}window.currentChatId=c.requestId;openChatThread(c.requestId,c.userName||'User');setTimeout(()=>document.getElementById('tt-kundli').click(),300);};row.querySelector('[data-action="remedy"]').onclick=()=>{if(!c.requestId){alert('This older call does not have a linked request.');return;}window.currentChatId=c.requestId;openChatThread(c.requestId,c.userName||'User');setTimeout(()=>document.getElementById('tt-remedies').click(),300);};
+      });
     }catch(e){body.innerHTML=`<div class="empty-state">Error: ${e.message}</div>`;}
   }
   window.renderOrdersTab=renderOrdersTab;
@@ -3753,12 +3859,15 @@
 
   window.rejectFromOrders = async function(reqId) {
     try {
+      const rSnap = await getDoc(doc(db,'requests',reqId));
+      const reqType = rSnap.exists() ? (rSnap.data().type || 'chat') : 'chat';
       await updateDoc(doc(db,'requests',reqId), {
         status:'declined',
         queueStatus:'declined',
         declinedBy:'astrologer',
         declinedAt:serverTimestamp()
       });
+      await markAstrologerMissed(reqId, reqType);
       if(currentRequestId === reqId){
         stopRing();
         stopReqCountdown();
@@ -3800,12 +3909,15 @@
     stopRing();
     stopReqCountdown();
     document.getElementById('incoming-overlay').style.display = 'none';
-    await updateDoc(doc(db, 'requests', currentRequestId), {
+    const reqId = currentRequestId;
+    const reqType = currentRequestData ? currentRequestData.type : 'chat';
+    await updateDoc(doc(db, 'requests', reqId), {
       status: 'declined',
       queueStatus: 'declined',
       declinedBy: 'astrologer',
       declinedAt: serverTimestamp()
     });
+    await markAstrologerMissed(reqId, reqType);
     currentRequestId = null;
     currentRequestData = null;
   });
