@@ -190,10 +190,11 @@
     flex:1; min-width:0; border:none; background:transparent; outline:none;
     color:var(--ink); font-size:14px; padding:6px 0;
   }
-  .thread-input-bar .round-btn{
+  .thread-input-bar .round-btn, #ticket-record-bar .round-btn{
     width:42px; height:42px; border-radius:50%; border:none; background:var(--gold);
     color:#2E1D0C; font-size:18px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center;
   }
+  @keyframes tRecPulse{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:0.35; transform:scale(0.8); } }
 
   /* chat thread toolbar */
   .thread-toolbar{
@@ -738,12 +739,22 @@
 <div class="sub-screen" id="screen-ticket">
   <div class="sub-header">
     <span class="back" data-back="screen-support-list">←</span>
-    <span class="title" id="ticket-title" style="flex:1;">Ticket</span>
+    <div style="flex:1; line-height:1.25;">
+      <div class="title">Support Chat</div>
+      <div id="ticket-title" style="font-size:11px; color:var(--dim); font-weight:500; font-family:'Manrope',sans-serif; letter-spacing:0;"></div>
+    </div>
   </div>
   <div class="thread-body" id="ticket-body" style="padding-bottom:90px;"></div>
-  <div class="thread-input-bar">
+  <div id="ticket-record-bar" style="display:none; position:fixed; left:0; right:0; bottom:0; max-width:480px; margin:0 auto; z-index:9; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid var(--line); background:var(--bg-soft); backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%);">
+    <div style="width:9px; height:9px; border-radius:50%; background:#D64C6B; animation:tRecPulse 1s ease-in-out infinite; flex-shrink:0;"></div>
+    <span id="ticket-rec-timer" style="flex:1; font-size:13.5px; font-weight:700;">0:00</span>
+    <button id="ticket-rec-cancel" title="Cancel" style="width:40px; height:40px; border-radius:50%; border:1px solid var(--line); background:transparent; color:var(--dim); font-size:16px; cursor:pointer; flex-shrink:0;">✕</button>
+    <button id="ticket-rec-stop" class="round-btn" title="Send">➤</button>
+  </div>
+  <div class="thread-input-bar" id="ticket-type-bar">
     <input type="text" id="ticket-input" placeholder="Describe your issue...">
-    <button id="ticket-send">➤</button>
+    <button id="ticket-mic" class="round-btn" title="Record voice message" style="background:var(--card); border:1px solid var(--line); color:var(--gold-text);">🎤</button>
+    <button id="ticket-send" class="round-btn">➤</button>
   </div>
 </div>
 
@@ -2604,6 +2615,8 @@
     showScreen('screen-ticket');
     window.currentTicketId = ticketId;
     document.getElementById('ticket-title').textContent = 'Ticket #' + ticketNumber;
+    document.getElementById('ticket-record-bar').style.display = 'none';
+    document.getElementById('ticket-type-bar').style.display = 'flex';
     const body = document.getElementById('ticket-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
     window.scrollTo(0, 0);
@@ -2622,7 +2635,13 @@
         const cls = m.senderType === 'astrologer' ? 'from-astro' : m.senderType === 'system' ? 'from-system' : 'from-user';
         bubble.className = 'bubble ' + cls;
         const time = m.sentAt?.toDate ? m.sentAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
-        bubble.innerHTML = cls === 'from-system' ? (m.text || '') : `${m.text || ''}<span class="ts">${time}</span>`;
+        if (cls === 'from-system') {
+          bubble.innerHTML = m.text || '';
+        } else if (m.voiceNote) {
+          bubble.innerHTML = `<audio controls src="${m.voiceNote}" style="max-width:210px;"></audio><span class="ts">${time}</span>`;
+        } else {
+          bubble.innerHTML = `${m.text || ''}<span class="ts">${time}</span>`;
+        }
         body.appendChild(bubble);
       });
       if (Date.now() - openedAt < 1200) { window.scrollTo(0,0); document.body.scrollTop = 0; document.documentElement.scrollTop = 0; }
@@ -2644,6 +2663,70 @@
   }
   document.getElementById('ticket-send').addEventListener('click', sendTicketMessage);
   document.getElementById('ticket-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendTicketMessage(); });
+
+  // ---- Support ticket voice notes (mic in the ticket chat bottom bar) ----
+  let ticketMediaRecorder = null;
+  let ticketRecordedChunks = [];
+  let ticketRecTimerInt = null;
+  let ticketRecCancelled = false;
+  const TICKET_REC_MAX_SECONDS = 90;
+
+  function ticketRecTick(startedAt) {
+    const secs = Math.floor((Date.now() - startedAt) / 1000);
+    const mm = Math.floor(secs / 60), ss = secs % 60;
+    const timerEl = document.getElementById('ticket-rec-timer');
+    if (timerEl) timerEl.textContent = `${mm}:${ss < 10 ? '0' : ''}${ss}`;
+    if (secs >= TICKET_REC_MAX_SECONDS && ticketMediaRecorder && ticketMediaRecorder.state === 'recording') {
+      ticketMediaRecorder.stop();
+    }
+  }
+
+  async function startTicketRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      ticketMediaRecorder = new MediaRecorder(stream);
+      ticketRecordedChunks = [];
+      ticketRecCancelled = false;
+      ticketMediaRecorder.ondataavailable = (e) => ticketRecordedChunks.push(e.data);
+      ticketMediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        clearInterval(ticketRecTimerInt);
+        document.getElementById('ticket-record-bar').style.display = 'none';
+        document.getElementById('ticket-type-bar').style.display = 'flex';
+        if (ticketRecCancelled || !window.currentTicketId) return;
+        const blob = new Blob(ticketRecordedChunks, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.onload = async () => {
+          await addDoc(collection(db, 'supportTickets', window.currentTicketId, 'messages'), {
+            senderType: 'astrologer', voiceNote: reader.result, sentAt: serverTimestamp()
+          });
+          await updateDoc(doc(db, 'supportTickets', window.currentTicketId), {
+            lastMessage: '🎤 Voice message', lastMessageAt: serverTimestamp()
+          });
+        };
+        reader.readAsDataURL(blob);
+      };
+      ticketMediaRecorder.start();
+      const startedAt = Date.now();
+      document.getElementById('ticket-rec-timer').textContent = '0:00';
+      document.getElementById('ticket-type-bar').style.display = 'none';
+      document.getElementById('ticket-record-bar').style.display = 'flex';
+      ticketRecTimerInt = setInterval(() => ticketRecTick(startedAt), 250);
+    } catch (e) {
+      alert('Microphone access is needed to send a voice message.');
+    }
+  }
+
+  document.getElementById('ticket-mic').addEventListener('click', startTicketRecording);
+  document.getElementById('ticket-rec-stop').addEventListener('click', () => {
+    if (ticketMediaRecorder && ticketMediaRecorder.state === 'recording') ticketMediaRecorder.stop();
+  });
+  document.getElementById('ticket-rec-cancel').addEventListener('click', () => {
+    if (ticketMediaRecorder && ticketMediaRecorder.state === 'recording') {
+      ticketRecCancelled = true;
+      ticketMediaRecorder.stop();
+    }
+  });
 
   async function loadKundliForPerson(s) {
     document.getElementById('uk-content').innerHTML = '<div class="empty-state">Loading kundli...</div>';
