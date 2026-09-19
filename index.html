@@ -3599,40 +3599,130 @@
     loadScoreboard();
   });
 
+  // ---- Performance / visibility parameters ----
+  // Same live formula as the Admin Panel's Performance tab and the User App's listing
+  // sort (kept in sync across all three files): 30-day grace period at 100 for a new
+  // astrologer, then computed from the most recent 100 relevant records of real data.
+  const PERF_GRACE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+  const PERF_THRESHOLDS = { callRatingPct: 75, chatRatingPct: 75, loyalUsersPct: 40, satisfactionPct: 70, responseRatePct: 85 };
+
+  function perfTsToMs(ts) {
+    if (!ts) return 0;
+    if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+    if (ts.seconds) return ts.seconds * 1000;
+    return 0;
+  }
+
+  async function computeAstroParams(astroId, createdAt) {
+    const createdMs = perfTsToMs(createdAt);
+    const ageMs = createdMs ? (Date.now() - createdMs) : 0;
+    if (!createdMs || ageMs < PERF_GRACE_MS) {
+      return { callRatingPct: 100, chatRatingPct: 100, loyalUsersPct: 100, satisfactionPct: 100, responseRatePct: 100, visibilityScore: 100, inGracePeriod: true };
+    }
+
+    const [reviewsSnap, chatsSnap, callsSnap, satSnap, requestsSnap] = await Promise.all([
+      getDocs(query(collection(db, 'reviews'), where('astrologerId', '==', astroId))),
+      getDocs(query(collection(db, 'chats'), where('astrologerId', '==', astroId))),
+      getDocs(query(collection(db, 'calls'), where('astrologerId', '==', astroId))),
+      getDocs(query(collection(db, 'satisfactionRatings'), where('astrologerId', '==', astroId))),
+      getDocs(query(collection(db, 'requests'), where('astrologerId', '==', astroId)))
+    ]);
+
+    const reviews = []; reviewsSnap.forEach(d => reviews.push(d.data()));
+    reviews.sort((a, b) => perfTsToMs(b.createdAt) - perfTsToMs(a.createdAt));
+    const callReviews = reviews.filter(r => r.sessionType === 'call' || r.sessionType === 'video').slice(0, 100);
+    const chatReviews = reviews.filter(r => r.sessionType === 'chat').slice(0, 100);
+    function ratingPct(list) {
+      if (!list.length) return 100;
+      const fiveStar = list.filter(r => (r.rating || 0) === 5).length;
+      return Math.round((fiveStar / list.length) * 100);
+    }
+    const callRatingPct = ratingPct(callReviews);
+    const chatRatingPct = ratingPct(chatReviews);
+
+    const sessions = [];
+    chatsSnap.forEach(d => {
+      const c = d.data();
+      if (c.status === 'ended' && c.createdAt && c.endedAt) {
+        sessions.push({ durMin: (perfTsToMs(c.endedAt) - perfTsToMs(c.createdAt)) / 60000, ts: perfTsToMs(c.endedAt) });
+      }
+    });
+    callsSnap.forEach(d => {
+      const c = d.data();
+      if (typeof c.duration === 'number') {
+        sessions.push({ durMin: c.duration / 60, ts: perfTsToMs(c.calledAt) });
+      }
+    });
+    sessions.sort((a, b) => b.ts - a.ts);
+    const recentSessions = sessions.slice(0, 100);
+    let loyalUsersPct = 100;
+    if (recentSessions.length) {
+      loyalUsersPct = Math.round((recentSessions.filter(s => s.durMin > 15).length / recentSessions.length) * 100);
+    }
+
+    const satRows = []; satSnap.forEach(d => satRows.push(d.data()));
+    satRows.sort((a, b) => perfTsToMs(b.createdAt) - perfTsToMs(a.createdAt));
+    const recentSat = satRows.slice(0, 100);
+    let satisfactionPct = 100;
+    if (recentSat.length) {
+      const avgScore = recentSat.reduce((sum, r) => sum + (r.score || 0), 0) / recentSat.length;
+      satisfactionPct = Math.round((avgScore / 10) * 100);
+    }
+
+    // Only requests the astrologer themselves missed count here. A request the user
+    // backed out of/cancelled — even one the astrologer had already accepted — is
+    // excluded entirely (missedBy:'user'), so it has no effect either way.
+    const requestRows = []; requestsSnap.forEach(d => requestRows.push(d.data()));
+    const settledRequests = requestRows.filter(r =>
+      r.missedBy !== 'user' &&
+      (r.missedBy === 'astrologer' || !!r.astrologerAcceptedAt || r.queueStatus === 'completed' || r.queueStatus === 'started')
+    );
+    settledRequests.sort((a, b) => perfTsToMs(b.createdAt) - perfTsToMs(a.createdAt));
+    const recentRequests = settledRequests.slice(0, 100);
+    let responseRatePct = 100;
+    if (recentRequests.length) {
+      responseRatePct = Math.round((recentRequests.filter(r => r.missedBy !== 'astrologer').length / recentRequests.length) * 100);
+    }
+
+    const visibilityScore = Math.round((callRatingPct + chatRatingPct + loyalUsersPct + satisfactionPct + responseRatePct) / 5);
+    return { callRatingPct, chatRatingPct, loyalUsersPct, satisfactionPct, responseRatePct, visibilityScore, inGracePeriod: false };
+  }
+
   async function loadScoreboard() {
     const body = document.getElementById('scoreboard-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
 
-    // Astrologer's own scores
     const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
     const a = astroSnap.exists() ? astroSnap.data() : {};
-
-    // Admin-set thresholds (config/scoreThresholds in Firestore)
-    let t = { callRatingThreshold: 70, chatRatingThreshold: 70, loyalUsersThreshold: 50, satisfactionThreshold: 70 };
-    try {
-      const configSnap = await getDoc(doc(db, 'config', 'scoreThresholds'));
-      if (configSnap.exists()) t = { ...t, ...configSnap.data() };
-    } catch (e) { /* use defaults */ }
+    const p = await computeAstroParams(window.currentUid, a.createdAt);
 
     const params = [
-      { label: 'Average Call Rating', value: a.avgCallRating || 0, threshold: t.callRatingThreshold },
-      { label: 'Average Chat Rating', value: a.avgChatRating || 0, threshold: t.chatRatingThreshold },
-      { label: 'Loyal Users', value: a.loyalUsersPct || 0, threshold: t.loyalUsersThreshold },
-      { label: 'Customer Satisfaction', value: a.satisfactionRating || 0, threshold: t.satisfactionThreshold },
+      { label: 'Average Call Rating', value: p.callRatingPct, threshold: PERF_THRESHOLDS.callRatingPct },
+      { label: 'Average Chat Rating', value: p.chatRatingPct, threshold: PERF_THRESHOLDS.chatRatingPct },
+      { label: 'Loyal Users', value: p.loyalUsersPct, threshold: PERF_THRESHOLDS.loyalUsersPct },
+      { label: 'Customer Satisfaction', value: p.satisfactionPct, threshold: PERF_THRESHOLDS.satisfactionPct },
+      { label: 'Response Rate (not missing chats/calls)', value: p.responseRatePct, threshold: PERF_THRESHOLDS.responseRatePct },
     ];
 
     body.innerHTML = '';
-    params.forEach(p => {
-      const isGood = p.value >= p.threshold;
+    if (p.inGracePeriod) {
+      const note = document.createElement('div');
+      note.className = 'acct-hint';
+      note.style.marginBottom = '14px';
+      note.textContent = "New astrologer — parameters default to 100% for your first 30 days.";
+      body.appendChild(note);
+    }
+    params.forEach(pm => {
+      const isGood = pm.value >= pm.threshold;
       const item = document.createElement('div');
       item.className = 'score-item';
       item.innerHTML = `
         <div class="top-row">
-          <span class="param-label">${p.label}</span>
-          <span class="param-value ${isGood ? 'good' : 'bad'}">${p.value}%</span>
+          <span class="param-label">${pm.label}</span>
+          <span class="param-value ${isGood ? 'good' : 'bad'}">${pm.value}%</span>
         </div>
         <div class="score-bar-bg">
-          <div class="score-bar-fill ${isGood ? 'good' : 'bad'}" style="width:${p.value}%"></div>
+          <div class="score-bar-fill ${isGood ? 'good' : 'bad'}" style="width:${pm.value}%"></div>
         </div>`;
       body.appendChild(item);
     });
