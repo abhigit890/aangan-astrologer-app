@@ -532,7 +532,7 @@
     <div class="tile" id="tile-bookings"><div class="icon-circle">🙏</div><div class="tile-label">Remedy Bookings</div></div>
     <div class="tile"><div class="icon-circle">🎁</div><div class="tile-label">Offers</div></div>
     <div class="tile" id="tile-reviews"><div class="icon-circle">⭐</div><div class="tile-label">My Reviews</div></div>
-    <div class="tile"><div class="icon-circle">⚙️</div><div class="tile-label">Settings</div></div>
+    <div class="tile" id="tile-settings"><div class="icon-circle">⚙️</div><div class="tile-label">Settings</div></div>
     <div class="tile" id="tile-support"><div class="icon-circle">🎧</div><div class="tile-label">Support</div></div>
   </div>
 
@@ -796,6 +796,52 @@
   </div>
 </div>
 
+<!-- SETTINGS SCREEN -->
+<div class="sub-screen" id="screen-settings">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">Settings</span>
+  </div>
+
+  <div class="acct-block">
+    <div class="acct-section-title">Update Number</div>
+    <p class="acct-hint">Save your mobile number here. This is used so we can reach you (for example, an automated call reminder) if you miss a chat or call request.</p>
+    <input type="tel" id="set-phone-input" placeholder="e.g. 98765 43210" style="width:100%; box-sizing:border-box; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:14px; margin-bottom:10px;">
+    <button id="set-phone-save-btn" class="acct-solid-btn">Save Number</button>
+    <div id="set-phone-msg" class="acct-hint" style="min-height:16px;"></div>
+  </div>
+
+  <div class="acct-divider"></div>
+
+  <div class="acct-block">
+    <div class="acct-section-title">Training Videos</div>
+    <p class="acct-hint">Learn how to use the Astrologer App.</p>
+    <div id="set-training-list"><div class="acct-hint">Loading...</div></div>
+  </div>
+
+  <div class="acct-divider"></div>
+
+  <div class="acct-block">
+    <div class="acct-section-title">Terms &amp; Conditions</div>
+    <p id="set-terms-text" class="acct-about-text">Loading...</p>
+  </div>
+
+  <div class="acct-divider"></div>
+
+  <div class="acct-block">
+    <button id="set-logout-btn" style="width:100%; padding:14px; border-radius:12px; border:none; background:#C1443A; color:#fff; font-size:15px; font-weight:700; cursor:pointer;">Log Out</button>
+  </div>
+</div>
+
+<!-- TRAINING VIDEO PLAYER OVERLAY -->
+<div id="training-video-overlay" class="modal-overlay">
+  <div class="modal-box" style="max-width:420px; padding:14px;">
+    <h2 class="modal-title" id="tv-title" style="margin-bottom:10px;">Training Video</h2>
+    <div id="tv-player-wrap" style="width:100%; aspect-ratio:16/9; background:#000; border-radius:10px; overflow:hidden; margin-bottom:14px;"></div>
+    <div class="modal-actions"><button class="acct-outline-btn" onclick="closeTrainingVideo()" style="width:100%;">Close</button></div>
+  </div>
+</div>
+
 <!-- USER KUNDLI VIEW SCREEN -->
 <div class="sub-screen" id="screen-user-kundli">
   <div class="sub-header">
@@ -877,7 +923,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
-    getAuth, signInWithEmailAndPassword, onAuthStateChanged
+    getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
     getFirestore, doc, setDoc, updateDoc, serverTimestamp, getDoc, addDoc,
@@ -908,15 +954,18 @@
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
       const uid = result.user.uid;
-      // Only seed the online-toggle fields the very first time this astrologer's doc is
-      // created (e.g. their very first login). On every later login/refresh we must NOT
-      // overwrite chatOnline/callOnline/videoOnline, or a returning astrologer who was
-      // online gets silently flipped offline just by logging back in.
+      // Security: this app must never create an astrologers/{uid} doc on login.
+      // Astrologer accounts are only ever created by the admin panel's "Hire" flow.
+      // If no such doc exists yet, this email is not a registered astrologer (it could
+      // be, e.g., someone's ordinary User App account) — refuse the login here.
       const existingSnap = await getDoc(doc(db, 'astrologers', uid));
-      const seedFields = existingSnap.exists() ? {} : { chatOnline: false, callOnline: false, videoOnline: false };
+      if (!existingSnap.exists()) {
+        await signOut(auth);
+        statusMsg.textContent = 'This account is not registered as an astrologer. Please contact Kinnar Talk support.';
+        return;
+      }
       await setDoc(doc(db, 'astrologers', uid), {
         email: result.user.email,
-        ...seedFields,
         updatedAt: serverTimestamp()
       }, { merge: true });
       statusMsg.textContent = '';
@@ -929,6 +978,21 @@
 
   onAuthStateChanged(auth, async (user) => {
     if (user) {
+      // Same guard as login, in case a browser session persisted from before this
+      // check existed, or from any other unexpected path into this app.
+      let selfSnap;
+      try {
+        selfSnap = await getDoc(doc(db, 'astrologers', user.uid));
+      } catch (e) {
+        selfSnap = null;
+      }
+      if (!selfSnap || !selfSnap.exists()) {
+        await signOut(auth);
+        loginCard.style.display = 'block';
+        dashboard.style.display = 'none';
+        statusMsg.textContent = 'This account is not registered as an astrologer. Please contact Kinnar Talk support.';
+        return;
+      }
       loginCard.style.display = 'none';
       dashboard.style.display = 'block';
       document.getElementById('header-name').textContent = user.email.split('@')[0];
@@ -939,8 +1003,7 @@
       // the switches would visually show "offline" even though Firestore (and therefore
       // the User App) still correctly has the astrologer online.
       try {
-        const selfSnap = await getDoc(doc(db, 'astrologers', user.uid));
-        const selfData = selfSnap.exists() ? selfSnap.data() : {};
+        const selfData = selfSnap.data() || {};
         ['chatOnline', 'callOnline', 'videoOnline'].forEach(field => {
           toggleState[field] = !!selfData[field];
           const sw = document.querySelector(`.switch[data-field="${field}"]`);
@@ -1963,6 +2026,105 @@
       msgEl.textContent = 'Error: ' + e.message;
       msgEl.style.color = '#E08AA8';
     }
+  });
+
+  // ---- Settings screen ----
+  document.getElementById('tile-settings').addEventListener('click', openSettingsScreen);
+
+  let trainingVideosUnsub = null;
+
+  async function openSettingsScreen() {
+    showScreen('screen-settings');
+
+    // Update Number
+    try {
+      const snap = await getDoc(doc(db, 'astrologers', window.currentUid));
+      const a = snap.exists() ? snap.data() : {};
+      document.getElementById('set-phone-input').value = a.phone || '';
+    } catch (e) { /* leave the field blank */ }
+    document.getElementById('set-phone-msg').textContent = '';
+
+    // Training Videos — list uploaded from the admin panel (collection: trainingVideos).
+    // Shows a friendly empty state until the admin adds any.
+    const listEl = document.getElementById('set-training-list');
+    listEl.innerHTML = '<div class="acct-hint">Loading...</div>';
+    if (trainingVideosUnsub) { trainingVideosUnsub(); trainingVideosUnsub = null; }
+    try {
+      trainingVideosUnsub = onSnapshot(query(collection(db, 'trainingVideos'), orderBy('createdAt', 'asc')), (snap) => {
+        if (snap.empty) {
+          listEl.innerHTML = '<div class="acct-hint">No training videos yet — check back soon.</div>';
+          return;
+        }
+        listEl.innerHTML = snap.docs.map(d => {
+          const v = d.data();
+          return `<div class="acct-info-item" data-video-id="${d.id}" style="display:flex; align-items:center; gap:10px; margin-bottom:8px; cursor:pointer;">
+            <div style="font-size:20px;">▶️</div>
+            <div style="min-width:0; flex:1;"><div class="acct-info-val" style="white-space:normal;">${v.title || 'Untitled video'}</div>${v.description ? `<div class="acct-hint" style="margin:2px 0 0;">${v.description}</div>` : ''}</div>
+          </div>`;
+        }).join('');
+        listEl.querySelectorAll('[data-video-id]').forEach(row => {
+          row.addEventListener('click', () => {
+            const d = snap.docs.find(x => x.id === row.dataset.videoId);
+            if (d) openTrainingVideo(d.data());
+          });
+        });
+      }, (err) => { listEl.innerHTML = `<div class="acct-hint">Error: ${err.message}</div>`; });
+    } catch (e) {
+      listEl.innerHTML = '<div class="acct-hint">No training videos yet — check back soon.</div>';
+    }
+
+    // Terms & Conditions — editable later from Firestore (config/termsAndConditions, field "text")
+    // without needing another app update.
+    const termsEl = document.getElementById('set-terms-text');
+    termsEl.textContent = 'Loading...';
+    try {
+      const tSnap = await getDoc(doc(db, 'config', 'termsAndConditions'));
+      termsEl.textContent = (tSnap.exists() && tSnap.data().text) ? tSnap.data().text : 'Content coming soon.';
+    } catch (e) {
+      termsEl.textContent = 'Content coming soon.';
+    }
+  }
+
+  document.getElementById('set-phone-save-btn').addEventListener('click', async () => {
+    const msgEl = document.getElementById('set-phone-msg');
+    const phone = document.getElementById('set-phone-input').value.trim();
+    if (!phone) { msgEl.textContent = 'Please enter a number.'; msgEl.style.color = '#E08AA8'; return; }
+    try {
+      await updateDoc(doc(db, 'astrologers', window.currentUid), { phone, updatedAt: serverTimestamp() });
+      msgEl.textContent = 'Saved!';
+      msgEl.style.color = 'var(--green)';
+    } catch (e) {
+      msgEl.textContent = 'Error: ' + e.message;
+      msgEl.style.color = '#E08AA8';
+    }
+  });
+
+  function openTrainingVideo(v) {
+    document.getElementById('tv-title').textContent = v.title || 'Training Video';
+    const wrap = document.getElementById('tv-player-wrap');
+    const url = v.videoUrl || '';
+    if (/youtube\.com|youtu\.be/.test(url)) {
+      let embedUrl = url;
+      const ytMatch = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+      if (ytMatch) embedUrl = `https://www.youtube.com/embed/${ytMatch[1]}`;
+      wrap.innerHTML = `<iframe src="${embedUrl}" style="width:100%; height:100%; border:0;" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+    } else {
+      wrap.innerHTML = `<video src="${url}" controls autoplay style="width:100%; height:100%; background:#000;"></video>`;
+    }
+    document.getElementById('training-video-overlay').classList.add('show');
+  }
+
+  window.closeTrainingVideo = function() {
+    document.getElementById('training-video-overlay').classList.remove('show');
+    document.getElementById('tv-player-wrap').innerHTML = '';
+  };
+
+  document.getElementById('set-logout-btn').addEventListener('click', async () => {
+    if (trainingVideosUnsub) { trainingVideosUnsub(); trainingVideosUnsub = null; }
+    await signOut(auth);
+    document.getElementById('email').value = '';
+    document.getElementById('password').value = '';
+    statusMsg.textContent = '';
   });
 
   // ---- Support ticket system ----
