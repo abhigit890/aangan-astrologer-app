@@ -745,6 +745,7 @@
     </div>
   </div>
   <div class="thread-body" id="ticket-body" style="padding-bottom:90px;"></div>
+  <div id="ticket-closed-banner" style="display:none; position:fixed; left:0; right:0; bottom:0; max-width:480px; margin:0 auto; z-index:9; padding:14px; border-top:1px solid var(--line); background:var(--bg-soft); text-align:center; font-size:12.5px; color:var(--dim);">🔒 This ticket is closed. Chat history is read-only.</div>
   <div id="ticket-record-bar" style="display:none; position:fixed; left:0; right:0; bottom:0; max-width:480px; margin:0 auto; z-index:9; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid var(--line); background:var(--bg-soft); backdrop-filter:blur(16px) saturate(160%); -webkit-backdrop-filter:blur(16px) saturate(160%);">
     <div style="width:9px; height:9px; border-radius:50%; background:#D64C6B; animation:tRecPulse 1s ease-in-out infinite; flex-shrink:0;"></div>
     <span id="ticket-rec-timer" style="flex:1; font-size:13.5px; font-weight:700;">0:00</span>
@@ -2610,6 +2611,7 @@
   }
 
   let ticketMsgUnsub = null;
+  let ticketDocUnsub = null;
 
   window.openTicketChat = function(ticketId, ticketNumber) {
     showScreen('screen-ticket');
@@ -2617,10 +2619,19 @@
     document.getElementById('ticket-title').textContent = 'Ticket #' + ticketNumber;
     document.getElementById('ticket-record-bar').style.display = 'none';
     document.getElementById('ticket-type-bar').style.display = 'flex';
+    document.getElementById('ticket-closed-banner').style.display = 'none';
     const body = document.getElementById('ticket-body');
     body.innerHTML = '<div class="empty-state">Loading...</div>';
     window.scrollTo(0, 0);
     if (ticketMsgUnsub) { ticketMsgUnsub(); ticketMsgUnsub = null; }
+    if (ticketDocUnsub) { ticketDocUnsub(); ticketDocUnsub = null; }
+    ticketDocUnsub = onSnapshot(doc(db, 'supportTickets', ticketId), (tsnap) => {
+      const td = tsnap.data();
+      const isClosed = td && td.status === 'closed';
+      document.getElementById('ticket-type-bar').style.display = isClosed ? 'none' : 'flex';
+      document.getElementById('ticket-record-bar').style.display = 'none';
+      document.getElementById('ticket-closed-banner').style.display = isClosed ? 'block' : 'none';
+    });
     const q = query(collection(db, 'supportTickets', ticketId, 'messages'), orderBy('sentAt', 'asc'));
     const openedAt = Date.now();
     ticketMsgUnsub = onSnapshot(q, (snap) => {
