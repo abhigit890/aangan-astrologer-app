@@ -1091,16 +1091,26 @@
       where('astrologerId', '==', window.currentUid),
       orderBy('lastMessageAt', 'desc')
     );
-    onSnapshot(q, (snap) => {
-      if (snap.empty) {
+    onSnapshot(q, async (snap) => {
+      const rows = [];
+      snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+
+      // Requests this astrologer never picked up (declined, or the 30-second ring
+      // timed out) never get a `chats` doc at all — pull those in too so a missed
+      // chat still shows up somewhere, with a clear "Missed by Astrologer" tag.
+      let missed = [];
+      try {
+        const missedSnap = await getDocs(query(collection(db, 'requests'), where('astrologerId', '==', window.currentUid)));
+        missed = missedSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => r.type === 'chat' && r.missedBy === 'astrologer');
+      } catch (e) { /* non-fatal — just skip the missed section this render */ }
+
+      if (!rows.length && !missed.length) {
         body.innerHTML = '<div class="empty-state">No chats yet. Once a user messages you, it will show up here.</div>';
         return;
       }
       body.innerHTML = '';
 
       // Figure out which chats are a user's first ever vs a repeat, across this whole list
-      const rows = [];
-      snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
       const firstChatIdByUser = {};
       rows.slice().sort((a, b) => {
         const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
@@ -1110,9 +1120,35 @@
         if (c.userId && !firstChatIdByUser[c.userId]) firstChatIdByUser[c.userId] = c.id;
       });
 
-      rows.forEach(c => {
-        const row = document.createElement('div');
-        row.className = 'booking-row';
+      const combined = [
+        ...rows.map(c => ({ kind: 'chat', c })),
+        ...missed.map(r => ({ kind: 'missed', r }))
+      ].sort((a, b) => {
+        const ta = (a.kind === 'chat' ? a.c.lastMessageAt : a.r.createdAt)?.toDate?.().getTime?.() || 0;
+        const tb = (b.kind === 'chat' ? b.c.lastMessageAt : b.r.createdAt)?.toDate?.().getTime?.() || 0;
+        return tb - ta;
+      });
+
+      combined.forEach(item => {
+        if (item.kind === 'missed') {
+          const r = item.r;
+          const row = document.createElement('div');
+          row.className = 'booking-row';
+          const dateText = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString('en-IN', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+          row.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--line);">
+              <span style="font-size:12px; font-weight:700; color:#C15B54;">Missed by Astrologer</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+              <span style="font-size:18px;">🔮</span>
+              <span class="bname">${r.userName || 'User'}</span>
+            </div>
+            <div class="buser">${dateText}</div>
+          `;
+          body.appendChild(row);
+          return;
+        }
+        const c = item.c;
 
         const s = c.selfDetails || {};
         const dob = s.dobDisplay || s.dob || '';
@@ -1120,6 +1156,7 @@
         const pob = s.pob || '';
         const isNew = c.userId && firstChatIdByUser[c.userId] === c.id;
 
+        const wasMissedByUser = c.endReason === 'user_cancelled';
         const isEnded = c.status === 'ended';
         let durationText = 'Ongoing';
         let earnedText = '₹0.00';
@@ -1132,12 +1169,17 @@
         }
         const dateText = c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString('en-IN', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
         const bookingId = 'AG-' + c.id.slice(0, 6).toUpperCase();
+        const statusText = wasMissedByUser ? 'Missed by User' : (isEnded ? 'Completed ✓' : 'Ongoing');
+        const statusColor = wasMissedByUser ? '#C15B54' : (isEnded ? 'var(--green)' : 'var(--gold-text)');
+
+        const row = document.createElement('div');
+        row.className = 'booking-row';
 
         row.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--line);">
             <span style="font-size:12px; font-weight:700; color:${isNew ? '#5FA8D3' : 'var(--gold-text)'};">${isNew ? 'New' : 'Repeat'}</span>
             <span style="width:1px; height:12px; background:var(--line);"></span>
-            <span style="font-size:12px; font-weight:700; color:${isEnded ? 'var(--green)' : 'var(--gold-text)'};">${isEnded ? 'Completed ✓' : 'Ongoing'}</span>
+            <span style="font-size:12px; font-weight:700; color:${statusColor};">${statusText}</span>
             <span style="flex:1;"></span>
             <span style="font-family:'Cinzel',serif; font-weight:700; color:var(--gold-text); font-size:14px;">${earnedText}</span>
           </div>
@@ -3473,17 +3515,58 @@
       where('astrologerId', '==', window.currentUid),
       orderBy('calledAt', 'desc')
     );
-    onSnapshot(q, (snap) => {
-      if (snap.empty) {
+    onSnapshot(q, async (snap) => {
+      const rows = [];
+      snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+
+      // Missed (declined / 30-second-timeout) call & video requests never get a `calls`
+      // doc — pull those in too so they show up with a clear "Missed by Astrologer" tag.
+      let missed = [];
+      try {
+        const missedSnap = await getDocs(query(collection(db, 'requests'), where('astrologerId', '==', window.currentUid)));
+        missed = missedSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => (r.type === 'call' || r.type === 'video') && r.missedBy === 'astrologer');
+      } catch (e) { /* non-fatal — just skip the missed section this render */ }
+
+      if (!rows.length && !missed.length) {
         body.innerHTML = '<div class="empty-state">No calls yet. Once a user calls you, it will show up here.</div>';
         return;
       }
       body.innerHTML = '';
-      snap.forEach(d => {
-        const c = d.data();
+
+      const combined = [
+        ...rows.map(c => ({ kind: 'call', c })),
+        ...missed.map(r => ({ kind: 'missed', r }))
+      ].sort((a, b) => {
+        const ta = (a.kind === 'call' ? a.c.calledAt : a.r.createdAt)?.toDate?.().getTime?.() || 0;
+        const tb = (b.kind === 'call' ? b.c.calledAt : b.r.createdAt)?.toDate?.().getTime?.() || 0;
+        return tb - ta;
+      });
+
+      combined.forEach(item => {
         const row = document.createElement('div');
         row.className = 'booking-row';
 
+        if (item.kind === 'missed') {
+          const r = item.r;
+          const dateText = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '';
+          const timeText = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
+          row.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+              <div>
+                <div class="bname">${r.userName || 'User'}</div>
+                <div class="buser">${dateText}, ${timeText}</div>
+              </div>
+              <div style="text-align:right;">
+                <span class="bstatus" style="color:#C15B54;">Missed by Astrologer</span>
+              </div>
+            </div>
+            <div style="font-size:12px; color:var(--dim);">${r.type === 'video' ? '🎥 Video Call' : '📞 Audio Call'}</div>
+          `;
+          body.appendChild(row);
+          return;
+        }
+
+        const c = item.c;
         const dateText = c.calledAt?.toDate ? c.calledAt.toDate().toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '';
         const timeText = c.calledAt?.toDate ? c.calledAt.toDate().toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit'}) : '';
         const mins = Math.max(1, Math.round((c.duration || 0) / 60));
@@ -3617,13 +3700,26 @@
   }
 
   // Astrologer didn't pick up a chat/call/video request in time (or explicitly rejected
-  // it) — mark the request as missed by the astrologer, and automatically flip the
-  // matching online toggle (chat/call/video) off so the astrologer stops showing as
-  // available for that mode in the User App until they turn it back on themselves.
-  async function markAstrologerMissed(reqId, reqType) {
+  // it) — mark the request declined + missed-by-astrologer in a SINGLE write (doing this
+  // as two separate updateDoc calls to the same doc was unreliable — depending on
+  // Firestore rules/timing, the second write after `status` had already flipped to
+  // 'declined' could silently fail), and automatically flip the matching online toggle
+  // (chat/call/video) off so the astrologer stops showing as available for that mode in
+  // the User App until they turn it back on themselves.
+  async function markAstrologerMissed(reqId, reqType, extraFields = {}) {
     try {
-      await updateDoc(doc(db, 'requests', reqId), { missedBy: 'astrologer', missedAt: serverTimestamp() });
-    } catch (e) { /* non-fatal */ }
+      await updateDoc(doc(db, 'requests', reqId), {
+        status: 'declined',
+        queueStatus: 'declined',
+        declinedBy: 'astrologer',
+        declinedAt: serverTimestamp(),
+        missedBy: 'astrologer',
+        missedAt: serverTimestamp(),
+        ...extraFields
+      });
+    } catch (e) {
+      console.error('markAstrologerMissed: could not update request', reqId, e);
+    }
     const field = reqType === 'video' ? 'videoOnline' : reqType === 'call' ? 'callOnline' : 'chatOnline';
     try {
       await updateDoc(doc(db, 'astrologers', window.currentUid), { [field]: false, updatedAt: serverTimestamp() });
@@ -3633,7 +3729,9 @@
       const anyOn = Object.values(toggleState).some(v => v);
       const dot = document.getElementById('header-dot');
       if (dot) dot.classList.toggle('live', anyOn);
-    } catch (e) { /* non-fatal */ }
+    } catch (e) {
+      console.error('markAstrologerMissed: could not update astrologer toggle', field, e);
+    }
   }
 
   // ---- Chat request queue listener ----
@@ -4028,12 +4126,6 @@
     try {
       const rSnap = await getDoc(doc(db,'requests',reqId));
       const reqType = rSnap.exists() ? (rSnap.data().type || 'chat') : 'chat';
-      await updateDoc(doc(db,'requests',reqId), {
-        status:'declined',
-        queueStatus:'declined',
-        declinedBy:'astrologer',
-        declinedAt:serverTimestamp()
-      });
       await markAstrologerMissed(reqId, reqType);
       if(currentRequestId === reqId){
         stopRing();
@@ -4078,12 +4170,6 @@
     document.getElementById('incoming-overlay').style.display = 'none';
     const reqId = currentRequestId;
     const reqType = currentRequestData ? currentRequestData.type : 'chat';
-    await updateDoc(doc(db, 'requests', reqId), {
-      status: 'declined',
-      queueStatus: 'declined',
-      declinedBy: 'astrologer',
-      declinedAt: serverTimestamp()
-    });
     await markAstrologerMissed(reqId, reqType);
     currentRequestId = null;
     currentRequestData = null;
