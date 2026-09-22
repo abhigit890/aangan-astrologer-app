@@ -2347,25 +2347,45 @@
   // ---- Remedy Bookings + Video Call ----
   document.getElementById('tile-bookings').addEventListener('click', openBookingsList);
 
+  // Two separate, security-rule-friendly listeners instead of one unfiltered
+  // collection-wide listener: the Firestore rule for remedyOrders can only be
+  // proven per-document from a query's own filter (it cannot prove an
+  // unconditional "give me everything and I'll filter locally" read), so this
+  // is split into (a) bookings unassigned to any astrologer — which every
+  // astrologer must be able to see and claim — and (b) bookings already
+  // assigned to this astrologer specifically.
+  let bookingsUnsubUnassigned = null;
+  let bookingsUnsubMine = null;
+  let bookingsLatestUnassigned = [];
+  let bookingsLatestMine = [];
+
   function openBookingsList() {
     showScreen('screen-bookings');
     const listEl = document.getElementById('bookings-list');
     listEl.innerHTML = '<div class="empty-state">Loading...</div>';
+    if (bookingsUnsubUnassigned) { bookingsUnsubUnassigned(); bookingsUnsubUnassigned = null; }
+    if (bookingsUnsubMine) { bookingsUnsubMine(); bookingsUnsubMine = null; }
+    bookingsLatestUnassigned = [];
+    bookingsLatestMine = [];
     try {
-      onSnapshot(collection(db, 'remedyOrders'), (snap) => {
+      bookingsUnsubUnassigned = onSnapshot(
+        query(collection(db, 'remedyOrders'), where('assignedAstrologerId', '==', null)),
+        (snap) => { bookingsLatestUnassigned = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderBookingsList(listEl); },
+        (err) => { listEl.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`; }
+      );
+      bookingsUnsubMine = onSnapshot(
+        query(collection(db, 'remedyOrders'), where('assignedAstrologerId', '==', window.currentUid)),
+        (snap) => { bookingsLatestMine = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderBookingsList(listEl); },
+        (err) => { listEl.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`; }
+      );
+    } catch (err) {
+      listEl.innerHTML = `<div class="empty-state">Sync Error: ${err.message}</div>`;
+    }
+  }
+
+  function renderBookingsList(listEl) {
       try {
-        if (snap.empty) {
-          listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
-          return;
-        }
-        const rows = [];
-        snap.forEach(d => {
-          const o = d.data();
-          // Show unassigned bookings, or ones assigned to this astrologer
-          if (!o.assignedAstrologerId || o.assignedAstrologerId === window.currentUid) {
-            rows.push({ id: d.id, ...o });
-          }
-        });
+        const rows = [...bookingsLatestUnassigned, ...bookingsLatestMine];
         if (!rows.length) {
           listEl.innerHTML = '<div class="empty-state">No bookings yet.</div>';
           return;
@@ -2393,12 +2413,6 @@
       } catch (innerErr) {
         listEl.innerHTML = `<div class="empty-state">Render Error: ${innerErr.message}</div>`;
       }
-    }, (err) => {
-      listEl.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
-    });
-    } catch (err) {
-      listEl.innerHTML = `<div class="empty-state">Sync Error: ${err.message}</div>`;
-    }
   }
 
   window.acceptBooking = async function(orderId) {
