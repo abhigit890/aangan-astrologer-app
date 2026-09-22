@@ -8,6 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="manifest" href="astro-manifest.json">
 <link rel="icon" href="astro-icon-192.png">
+<!-- TEMP DEBUG TOOL — remove this script tag once the console issue is diagnosed -->
+<script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+<script>eruda.init();</script>
 <style>
   :root{
     --bg:#FAF9F5; --bg-soft:rgba(255,253,248,0.92);
@@ -1078,7 +1081,9 @@
       currentIncomingRemedyOrderId = null;
       document.getElementById('incoming-remedy-overlay').style.display = 'none';
       try { stopRing(); } catch (e) { /* ignore */ }
+      window.__loggingOut = true;
       try { if (typeof ccLocalCleanup === 'function') ccLocalCleanup(); } catch (e) { /* ignore */ }
+      try { if (typeof stopChatBilling === 'function') stopChatBilling(); } catch (e) { /* ignore */ }
       // Hide EVERY screen (dashboard + any open sub-screen like Settings/Account/Chat)
       // before showing the login card — otherwise whatever screen was open when the
       // astrologer logged out stays visible underneath/behind the login card.
@@ -1311,7 +1316,6 @@
     showScreen('screen-chat-thread');
     window.currentChatId = chatId;
     window.currentChatUserName = userName;
-    // watchChatBalance(chatId); // disabled for now — free chat until payment gateway is added
     document.getElementById('thread-username').textContent = userName;
     updateDoc(doc(db, 'astrologers', window.currentUid), { isBusy: true }).catch(()=>{});
     const body = document.getElementById('thread-body');
@@ -1329,7 +1333,9 @@
           window.currentChatUserName = null;
         }
         updateOngoingChatBar();
+        if (chatBillingChatId === chatId) stopChatBilling();
       }
+      if (active) startChatBilling(chatId);
       document.getElementById('thread-input').disabled = !active;
       document.getElementById('thread-send').disabled = !active;
       document.getElementById('end-chat-btn').style.display = (active||c.status==='waiting_user_acceptance') ? 'block' : 'none';
@@ -1490,26 +1496,82 @@
     }, 5000);
   }
 
-  let chatBalanceUnsub=null;
-  function watchChatBalance(chatId){
-    if(chatBalanceUnsub) chatBalanceUnsub();
-    chatBalanceUnsub=null;
+  // ==================================================================
+  // Chat/call billing — deducts the user's wallet balance continuously,
+  // every few seconds, for as long as the chat is 'active' — whether or
+  // not an in-chat audio call is also layered on top of it. This is
+  // deliberate: chat time and call time draw from the SAME talktime
+  // pool, exactly like a single running meter, so "5 min balance, 3 min
+  // spent chatting, 2 min left for the call" works out of the box with
+  // no separate accounting for chat vs call. Only the astrologer app
+  // runs this ticker (single writer), to avoid double-deducting the
+  // same balance from both apps at once.
+  // ==================================================================
+  let chatBillingInterval = null;
+  let chatBillingChatId = null;
+
+  function startChatBilling(chatId) {
+    if (chatBillingChatId === chatId && chatBillingInterval) return; // already metering this chat
+    stopChatBilling();
+    chatBillingChatId = chatId;
+    billChatTick(chatId); // bill immediately too, so a very short session is still charged fairly
+    chatBillingInterval = setInterval(() => billChatTick(chatId), 5000);
+  }
+  function stopChatBilling() {
+    if (chatBillingInterval) { clearInterval(chatBillingInterval); chatBillingInterval = null; }
+    chatBillingChatId = null;
+  }
+
+  async function billChatTick(chatId) {
+    try {
+      const chatSnap = await getDoc(doc(db, 'chats', chatId));
+      if (!chatSnap.exists()) { stopChatBilling(); return; }
+      const c = chatSnap.data();
+      if (c.status !== 'active') { stopChatBilling(); return; } // ended/not started elsewhere — nothing to meter
+      const userId = c.userId;
+      if (!userId) return;
+      const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
+      const ratePerMin = parseFloat((astroSnap.exists() && astroSnap.data().price) || 0) || 0;
+      if (ratePerMin <= 0) return; // free astrologer — nothing to bill
+
+      const nowMs = Date.now();
+      const lastMs = c.lastBilledAt && c.lastBilledAt.toDate ? c.lastBilledAt.toDate().getTime()
+        : (c.startedAt && c.startedAt.toDate ? c.startedAt.toDate().getTime() : nowMs);
+      const elapsedSec = Math.max(0, (nowMs - lastMs) / 1000);
+      if (elapsedSec < 1) return;
+      const costForElapsed = (elapsedSec / 60) * ratePerMin;
+
+      const userSnap = await getDoc(doc(db, 'users', userId));
+      const balance = userSnap.exists() ? (parseFloat(userSnap.data().balance || 0) || 0) : 0;
+
+      if (balance >= costForElapsed) {
+        await updateDoc(doc(db, 'users', userId), { balance: increment(-costForElapsed) });
+        await updateDoc(doc(db, 'chats', chatId), { lastBilledAt: serverTimestamp() });
+      } else {
+        // Balance runs out partway through this tick — charge only what's left, then end everything.
+        if (balance > 0) await updateDoc(doc(db, 'users', userId), { balance: 0 });
+        stopChatBilling();
+        await endChatForInsufficientBalance(chatId, c);
+      }
+    } catch (e) { console.error('billChatTick error', e); }
+  }
+
+  async function endChatForInsufficientBalance(chatId, c) {
     if (!window.__handledEndedChats) window.__handledEndedChats = new Set();
-    getDoc(doc(db,'chats',chatId)).then(cs=>{
-      const uid=cs.exists()?cs.data().userId:null;
-      if(!uid)return;
-      chatBalanceUnsub=onSnapshot(doc(db,'users',uid), async us=>{
-        if (window.__handledEndedChats.has(chatId)) return; // already ended this chat, ignore further balance events
-        const c=(await getDoc(doc(db,'chats',chatId))).data()||{};
-        if(c.status==='active' && us.exists() && (parseFloat(us.data().balance||0)||0)<=0){
-          window.__handledEndedChats.add(chatId); // claim it immediately, before any async writes
-          const ms=await getDocs(query(collection(db,'chats',chatId,'messages'),where('endReason','==','insufficient balance'),limit(1)));
-          if(!ms.empty) return; // a duplicate listener already handled this
-          const name=(c.userName||'User');
-          await updateDoc(doc(db,'chats',chatId),{status:'ended',endReason:'insufficient balance',endedByType:'system',endedByName:null,endedAt:serverTimestamp()});
-          await addDoc(collection(db,'chats',chatId,'messages'),{text:'This chat has been ended due to insufficient balance.',senderType:'system',endReason:'insufficient balance',sentAt:serverTimestamp()});
-        }
-      });
+    if (window.__handledEndedChats.has(chatId)) return;
+    window.__handledEndedChats.add(chatId); // claim immediately, before any async writes
+    const ms = await getDocs(query(collection(db, 'chats', chatId, 'messages'), where('endReason', '==', 'insufficient balance'), limit(1)));
+    if (!ms.empty) return; // already ended this way
+    const updates = { status: 'ended', endReason: 'insufficient balance', endedByType: 'system', endedByName: null, endedAt: serverTimestamp() };
+    // If a call was ringing/active on this chat, end it too — both sides' existing
+    // in-chat-call listener (ccHandleChatSnapshot) will clean up their call UI on its own.
+    if (c.callStatus === 'ringing' || c.callStatus === 'active') {
+      updates.callStatus = 'ended'; updates.callEndedAt = serverTimestamp(); updates.callEndedReason = 'insufficient balance';
+    }
+    await updateDoc(doc(db, 'chats', chatId), updates);
+    await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      text: 'This chat has been ended due to insufficient balance.',
+      senderType: 'system', endReason: 'insufficient balance', sentAt: serverTimestamp()
     });
   }
 
@@ -1535,6 +1597,7 @@
     if (!confirm('End this chat?')) return;
     const cid=window.currentChatId;
     if (ccChatId === cid || ccJoinedFor === cid) { try { await window.ccEndCall(); } catch (e) { /* ignore */ } }
+    if (chatBillingChatId === cid) stopChatBilling();
     const mySnap=await getDoc(doc(db,'astrologers',window.currentUid));
     const myName=(mySnap.exists()&&mySnap.data().name)||'Astrologer';
     await updateDoc(doc(db,'chats',cid),{status:'ended',endReason:'astrologer',endedByType:'astrologer',endedByName:myName,endedAt:serverTimestamp()});
@@ -2236,6 +2299,7 @@
     if (window.currentChatId) {
       try {
         const cid = window.currentChatId;
+        if (chatBillingChatId === cid) stopChatBilling();
         const mySnap = await getDoc(doc(db, 'astrologers', window.currentUid));
         const myName = (mySnap.exists() && mySnap.data().name) || 'Astrologer';
         await updateDoc(doc(db, 'chats', cid), {
@@ -2259,12 +2323,14 @@
   }
 
   document.getElementById('set-logout-btn').addEventListener('click', async () => {
+    window.__loggingOut = true; // stops ccLocalCleanup from re-opening a chat screen mid-logout
     if (trainingVideosUnsub) { trainingVideosUnsub(); trainingVideosUnsub = null; }
     await endActiveSessionBeforeLogout();
     await signOut(auth);
     document.getElementById('email').value = '';
     document.getElementById('password').value = '';
     statusMsg.textContent = '';
+    window.__loggingOut = false;
   });
 
   // ---- Support ticket system ----
@@ -3975,6 +4041,7 @@
   }
 
   async function ccLocalCleanup() {
+    const endedChatId = ccChatId || ccJoinedFor;
     if (ccTimerInterval) { clearInterval(ccTimerInterval); ccTimerInterval = null; }
     stopRing();
     try {
@@ -3986,6 +4053,15 @@
     document.getElementById('cc-overlay').style.display = 'none';
     document.getElementById('cc-pill').style.display = 'none';
     document.getElementById('cc-incoming-overlay').style.display = 'none';
+    // Whenever a call ends (for any reason), bring the astrologer back to that chat's
+    // window — even if they'd minimized the call and wandered off to another screen —
+    // so they land right where any automated end-of-chat message would show up.
+    if (endedChatId && !window.__loggingOut) {
+      try {
+        const cs = await getDoc(doc(db, 'chats', endedChatId));
+        if (cs.exists()) openChatThread(endedChatId, (cs.data() && cs.data().userName) || window.currentChatUserName || 'User');
+      } catch (e) { /* non-fatal */ }
+    }
   }
 
   window.ccAcceptIncoming = async function() {
