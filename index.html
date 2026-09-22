@@ -569,6 +569,7 @@
       <div class="title" id="thread-username" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Chat</div>
       <div id="thread-talktime" style="font-size:10.5px; color:var(--dim); font-weight:600;"></div>
     </div>
+    <span id="cc-call-btn" style="display:none; font-size:17px; margin-right:8px; cursor:pointer;" title="Start an audio call">📞</span>
     <span id="end-chat-btn" style="font-size:12px; color:#E08AA8; border:1px solid #E08AA8; border-radius:14px; padding:5px 12px; cursor:pointer;">End Chat</span>
   </div>
   <div class="thread-body" id="thread-body"></div>
@@ -892,6 +893,49 @@
   <img id="photo-viewer-img" style="max-width:100%; max-height:100%; transform-origin:center center; touch-action:none; user-select:none;">
 </div>
 
+<!-- ===== In-chat audio call: full overlay, minimized pill, incoming-call popup ===== -->
+<!-- These live outside the normal .sub-screen show/hide system so a call keeps
+     running (and stays reachable) no matter which screen the astrologer navigates to. -->
+<div id="cc-overlay" style="display:none; position:fixed; inset:0; z-index:400; background:#0C0904; flex-direction:column; align-items:center; justify-content:space-between; padding:50px 24px 40px; text-align:center;">
+  <div style="width:100%; display:flex; justify-content:flex-start;">
+    <span id="cc-minimize-btn" style="font-size:22px; color:#fff; cursor:pointer; padding:6px;">←</span>
+  </div>
+  <div style="display:flex; flex-direction:column; align-items:center;">
+    <img id="cc-photo" style="display:none; width:120px; height:120px; border-radius:50%; object-fit:cover; border:3px solid #D9A94F; margin-bottom:18px;">
+    <div id="cc-photo-empty" style="width:120px; height:120px; border-radius:50%; background:rgba(217,169,79,0.15); display:flex; align-items:center; justify-content:center; font-size:46px; margin-bottom:18px; color:#D9A94F;">👤</div>
+    <div id="cc-name" style="font-family:'Cinzel',serif; font-size:20px; color:#fff; margin-bottom:8px;">User</div>
+    <div id="cc-status" style="font-size:13.5px; color:#D8D0BF;">Calling...</div>
+  </div>
+  <div id="cc-remote-audio-container" style="display:none;"></div>
+  <div style="display:flex; gap:22px; align-items:center; justify-content:center;">
+    <span id="cc-speaker-btn" style="width:54px; height:54px; border-radius:50%; background:rgba(255,255,255,0.15); color:#fff; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center;">🔊</span>
+    <span id="cc-mute-btn" style="width:54px; height:54px; border-radius:50%; background:rgba(255,255,255,0.15); color:#fff; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center;">🎤</span>
+    <span id="cc-end-btn" style="width:64px; height:64px; border-radius:50%; background:#D64C6B; color:#fff; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center;">📞</span>
+  </div>
+</div>
+
+<div id="cc-pill" style="display:none; position:fixed; bottom:90px; right:16px; z-index:400; background:#2E1D0C; color:#fff; border-radius:30px; padding:10px 16px; align-items:center; gap:8px; box-shadow:0 6px 20px rgba(0,0,0,0.35); cursor:pointer;">
+  <span style="font-size:16px;">📞</span>
+  <span id="cc-pill-timer" style="font-size:13px; font-weight:700;">00:00</span>
+</div>
+
+<div id="cc-incoming-overlay" style="display:none; position:fixed; inset:0; z-index:410; background:rgba(4,2,1,0.96); flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px;">
+  <img id="cc-in-photo" style="display:none; width:110px; height:110px; border-radius:50%; object-fit:cover; border:3px solid #D9A94F; margin-bottom:16px;">
+  <div id="cc-in-photo-empty" style="width:110px; height:110px; border-radius:50%; background:rgba(217,169,79,0.15); display:flex; align-items:center; justify-content:center; font-size:42px; margin-bottom:16px; color:#D9A94F;">👤</div>
+  <div id="cc-in-name" style="font-family:'Cinzel',serif; font-size:19px; color:#fff; margin-bottom:6px;">User</div>
+  <div style="font-size:13px; color:#D8D0BF; margin-bottom:30px;">Incoming call...</div>
+  <div style="display:flex; gap:40px;">
+    <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+      <span id="cc-decline-btn" style="width:58px; height:58px; border-radius:50%; background:#D64C6B; display:flex; align-items:center; justify-content:center; font-size:24px; cursor:pointer;">✕</span>
+      <span style="font-size:11px; color:#D8D0BF;">Decline</span>
+    </div>
+    <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+      <span id="cc-accept-btn" style="width:58px; height:58px; border-radius:50%; background:#4CAF6A; display:flex; align-items:center; justify-content:center; font-size:24px; cursor:pointer;">✓</span>
+      <span style="font-size:11px; color:#D8D0BF;">Accept</span>
+    </div>
+  </div>
+</div>
+
 <div id="incoming-remedy-overlay" style="display:none; position:fixed; inset:0; background:rgba(4,2,1,0.96); z-index:110; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px;">
   <div class="ring-avatar">🙏</div>
   <div class="req-type" id="rc-req-type">Remedy Performance Call</div>
@@ -1034,6 +1078,7 @@
       currentIncomingRemedyOrderId = null;
       document.getElementById('incoming-remedy-overlay').style.display = 'none';
       try { stopRing(); } catch (e) { /* ignore */ }
+      try { if (typeof ccLocalCleanup === 'function') ccLocalCleanup(); } catch (e) { /* ignore */ }
       // Hide EVERY screen (dashboard + any open sub-screen like Settings/Account/Chat)
       // before showing the login card — otherwise whatever screen was open when the
       // astrologer logged out stays visible underneath/behind the login card.
@@ -1289,6 +1334,7 @@
       document.getElementById('thread-send').disabled = !active;
       document.getElementById('end-chat-btn').style.display = (active||c.status==='waiting_user_acceptance') ? 'block' : 'none';
       document.getElementById('thread-input').placeholder = active ? 'Type a message...' : 'Waiting for user to accept...';
+      ccHandleChatSnapshot(chatId, c);
       if(c.status!=='ended' && (c.status==='user_accepted' || c.requestUserAccepted===true)){
         if (!window.__startedChatsSent) window.__startedChatsSent = new Set();
         if (!window.__startedChatsSent.has(chatId)) {
@@ -1488,6 +1534,7 @@
     if (!window.currentChatId) return;
     if (!confirm('End this chat?')) return;
     const cid=window.currentChatId;
+    if (ccChatId === cid || ccJoinedFor === cid) { try { await window.ccEndCall(); } catch (e) { /* ignore */ } }
     const mySnap=await getDoc(doc(db,'astrologers',window.currentUid));
     const myName=(mySnap.exists()&&mySnap.data().name)||'Astrologer';
     await updateDoc(doc(db,'chats',cid),{status:'ended',endReason:'astrologer',endedByType:'astrologer',endedByName:myName,endedAt:serverTimestamp()});
@@ -2205,6 +2252,9 @@
     }
     if (typeof activeCallOrderId !== 'undefined' && activeCallOrderId) {
       try { await cleanupAndExitCall(true); } catch (e) { /* non-fatal */ }
+    }
+    if (typeof ccJoinedFor !== 'undefined' && (ccJoinedFor || ccChatId)) {
+      try { await window.ccEndCall(); } catch (e) { /* non-fatal */ }
     }
   }
 
@@ -3803,6 +3853,234 @@
   function stopRing() {
     if (ringInterval) { clearInterval(ringInterval); ringInterval = null; }
     if (window.__ringCtx) { window.__ringCtx.close(); window.__ringCtx = null; }
+  }
+
+  // ==================================================================
+  // In-chat audio call — lets either side turn an ongoing chat into a
+  // live call without leaving the chat behind. This is intentionally
+  // independent of the screen-navigation system (showScreen/.sub-screen)
+  // and of the profile/queue-based call system (activeCallOrderId etc.):
+  // once a call is ringing/active, its own Firestore listener and its
+  // own Agora client keep running no matter which screen is on top, so
+  // navigating back to the chat, back to the dashboard, or even just
+  // leaving the browser tab in the background never tears the call down
+  // by itself — only pressing "End" (on either side) does that. (A call
+  // can still be lost if the OS/browser fully kills the tab/process —
+  // no web app can survive that without a native background service.)
+  // ==================================================================
+  let ccAgoraClient = null;
+  let ccLocalAudioTrack = null;
+  let ccMicOn = true;
+  let ccSpeakerOn = true;
+  let ccChatId = null;          // the chat this call belongs to
+  let ccJoinedFor = null;       // chatId we've actually joined the Agora channel for
+  let ccMinimized = false;
+  let ccShowingIncomingFor = null; // chatId currently showing the incoming-call popup
+  let ccShowingOutgoingFor = null; // chatId currently showing "Calling..." (my own outgoing ring)
+  let ccJoinedAtMs = null;
+  let ccTimerInterval = null;
+  let ccOtherName = 'User';
+  let ccOtherPhoto = null;
+
+  function ccSetPeopleInfo(name, photo) {
+    ccOtherName = name || 'User';
+    ccOtherPhoto = photo || null;
+    document.getElementById('cc-name').textContent = ccOtherName;
+    document.getElementById('cc-in-name').textContent = ccOtherName;
+    ['cc-photo', 'cc-in-photo'].forEach((imgId, i) => {
+      const emptyId = i === 0 ? 'cc-photo-empty' : 'cc-in-photo-empty';
+      const img = document.getElementById(imgId);
+      const empty = document.getElementById(emptyId);
+      if (ccOtherPhoto) { img.src = ccOtherPhoto; img.style.display = 'block'; empty.style.display = 'none'; }
+      else { img.style.display = 'none'; empty.style.display = 'flex'; }
+    });
+  }
+
+  function ccFormatTime(sec) {
+    const m = Math.floor(sec / 60), s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function ccStartTimer() {
+    ccJoinedAtMs = Date.now();
+    if (ccTimerInterval) clearInterval(ccTimerInterval);
+    ccTimerInterval = setInterval(() => {
+      const sec = Math.floor((Date.now() - ccJoinedAtMs) / 1000);
+      const t = ccFormatTime(sec);
+      document.getElementById('cc-status').textContent = 'Connected ' + t;
+      document.getElementById('cc-pill-timer').textContent = t;
+    }, 1000);
+  }
+
+  function ccShowFull() {
+    ccMinimized = false;
+    document.getElementById('cc-overlay').style.display = 'flex';
+    document.getElementById('cc-pill').style.display = 'none';
+  }
+  function ccMinimizeCall() {
+    if (!ccJoinedFor && !ccShowingOutgoingFor) return; // nothing live to minimize
+    ccMinimized = true;
+    document.getElementById('cc-overlay').style.display = 'none';
+    document.getElementById('cc-pill').style.display = 'flex';
+  }
+
+  // Tap the 📞 button in an open chat's header to start a call.
+  window.ccStartCall = async function() {
+    if (!window.currentChatId) return;
+    if (ccChatId || ccJoinedFor || ccShowingOutgoingFor) { showScreen('screen-chat-thread'); if (ccJoinedFor) ccShowFull(); return; }
+    const chatId = window.currentChatId;
+    ccChatId = chatId;
+    ccShowingOutgoingFor = chatId;
+    ccSetPeopleInfo(window.currentChatUserName, document.getElementById('thread-user-photo').src && document.getElementById('thread-user-photo').style.display !== 'none' ? document.getElementById('thread-user-photo').src : null);
+    document.getElementById('cc-status').textContent = 'Calling...';
+    ccShowFull();
+    try {
+      await updateDoc(doc(db, 'chats', chatId), {
+        callStatus: 'ringing', callStartedBy: 'astrologer', callRingAt: serverTimestamp()
+      });
+    } catch (e) {
+      alert('Could not start the call: ' + e.message);
+      ccShowingOutgoingFor = null; ccChatId = null;
+      document.getElementById('cc-overlay').style.display = 'none';
+    }
+  };
+
+  async function ccJoinAgora(chatId) {
+    ccJoinedFor = chatId;
+    ccShowingOutgoingFor = null;
+    ccShowingIncomingFor = null;
+    document.getElementById('cc-incoming-overlay').style.display = 'none';
+    stopRing();
+    document.getElementById('cc-status').textContent = 'Connecting...';
+    if (!ccMinimized) ccShowFull(); else document.getElementById('cc-pill').style.display = 'flex';
+    try {
+      const tokenRes = await fetch(`${AGORA_BACKEND_URL}/api/agora-token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelName: 'chat_' + chatId, uid: 0 })
+      });
+      const tokenData = await tokenRes.json();
+      if (!tokenRes.ok) throw new Error(tokenData.error || 'Could not get call token');
+      ccAgoraClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+      ccAgoraClient.on('user-published', async (user, mediaType) => {
+        await ccAgoraClient.subscribe(user, mediaType);
+        if (mediaType === 'audio') user.audioTrack.play();
+      });
+      await ccAgoraClient.join(tokenData.appId, 'chat_' + chatId, tokenData.token, tokenData.uid || null);
+      ccLocalAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+      await ccAgoraClient.publish([ccLocalAudioTrack]);
+      ccStartTimer();
+    } catch (err) {
+      document.getElementById('cc-status').textContent = 'Call error: ' + err.message;
+    }
+  }
+
+  async function ccLocalCleanup() {
+    if (ccTimerInterval) { clearInterval(ccTimerInterval); ccTimerInterval = null; }
+    stopRing();
+    try {
+      if (ccLocalAudioTrack) { ccLocalAudioTrack.close(); ccLocalAudioTrack = null; }
+      if (ccAgoraClient) { await ccAgoraClient.leave(); ccAgoraClient = null; }
+    } catch (e) { /* ignore */ }
+    ccChatId = null; ccJoinedFor = null; ccShowingIncomingFor = null; ccShowingOutgoingFor = null;
+    ccMinimized = false; ccJoinedAtMs = null;
+    document.getElementById('cc-overlay').style.display = 'none';
+    document.getElementById('cc-pill').style.display = 'none';
+    document.getElementById('cc-incoming-overlay').style.display = 'none';
+  }
+
+  window.ccAcceptIncoming = async function() {
+    if (!ccShowingIncomingFor) return;
+    const chatId = ccShowingIncomingFor;
+    try {
+      await updateDoc(doc(db, 'chats', chatId), { callStatus: 'active', callAcceptedAt: serverTimestamp() });
+    } catch (e) { alert('Could not accept the call: ' + e.message); }
+  };
+  window.ccDeclineIncoming = async function() {
+    if (!ccShowingIncomingFor) return;
+    const chatId = ccShowingIncomingFor;
+    try {
+      await updateDoc(doc(db, 'chats', chatId), { callStatus: 'ended', callEndedAt: serverTimestamp(), callEndedReason: 'declined' });
+    } catch (e) { /* ignore */ }
+  };
+  window.ccEndCall = async function() {
+    const chatId = ccChatId || ccJoinedFor;
+    if (!chatId) return;
+    const durationSec = ccJoinedAtMs ? Math.round((Date.now() - ccJoinedAtMs) / 1000) : 0;
+    try {
+      await updateDoc(doc(db, 'chats', chatId), { callStatus: 'ended', callEndedAt: serverTimestamp() });
+      if (durationSec > 0) {
+        const chatSnap = await getDoc(doc(db, 'chats', chatId));
+        const cd = chatSnap.exists() ? chatSnap.data() : {};
+        await addDoc(collection(db, 'calls'), {
+          astrologerId: window.currentUid, userId: cd.userId || null, userName: cd.userName || ccOtherName,
+          type: 'call', duration: durationSec, calledAt: serverTimestamp(), fromChat: true, chatId
+        });
+      }
+    } catch (e) { /* ignore */ }
+    await ccLocalCleanup();
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const ccCallBtn = document.getElementById('cc-call-btn');
+    if (ccCallBtn) ccCallBtn.addEventListener('click', window.ccStartCall);
+    document.getElementById('cc-minimize-btn').addEventListener('click', ccMinimizeCall);
+    document.getElementById('cc-pill').addEventListener('click', ccShowFull);
+    document.getElementById('cc-end-btn').addEventListener('click', window.ccEndCall);
+    document.getElementById('cc-accept-btn').addEventListener('click', window.ccAcceptIncoming);
+    document.getElementById('cc-decline-btn').addEventListener('click', window.ccDeclineIncoming);
+    document.getElementById('cc-mute-btn').addEventListener('click', async () => {
+      ccMicOn = !ccMicOn;
+      if (ccLocalAudioTrack) await ccLocalAudioTrack.setEnabled(ccMicOn);
+      document.getElementById('cc-mute-btn').style.background = ccMicOn ? 'rgba(255,255,255,0.15)' : '#D64C6B';
+    });
+    document.getElementById('cc-speaker-btn').addEventListener('click', async () => {
+      ccSpeakerOn = !ccSpeakerOn;
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const outputs = devices.filter(d => d.kind === 'audiooutput');
+        const target = ccSpeakerOn
+          ? outputs.find(d => /speaker/i.test(d.label))
+          : outputs.find(d => /ear|receiver|default/i.test(d.label));
+        const audioEl = document.querySelector('#cc-remote-audio-container audio, audio');
+        if (audioEl && target && audioEl.setSinkId) await audioEl.setSinkId(target.deviceId);
+      } catch (e) { /* not supported on this device/browser */ }
+      document.getElementById('cc-speaker-btn').style.background = ccSpeakerOn ? 'rgba(255,255,255,0.15)' : '#4E8FC4';
+    });
+  });
+
+  // Watches a specific chat document for call-state changes (ringing / active / ended)
+  // for as long as that chat is the one open in the chat thread — attached from inside
+  // openChatThread's own status listener below so it keeps firing in the background
+  // even after navigating away from the chat screen, and is only replaced when a
+  // different chat is opened.
+  function ccHandleChatSnapshot(chatId, c) {
+    const callStatus = c.callStatus || 'none';
+    document.getElementById('cc-call-btn').style.display =
+      (c.status === 'active' && callStatus !== 'ringing' && callStatus !== 'active') ? 'inline-block' : 'none';
+
+    if (callStatus === 'ringing') {
+      if (c.callStartedBy === 'astrologer') {
+        // My own outgoing ring — nothing else to do, ccStartCall already showed the UI.
+      } else if (ccShowingIncomingFor !== chatId && ccJoinedFor !== chatId) {
+        ccShowingIncomingFor = chatId;
+        const photoEl = document.getElementById('thread-user-photo');
+        ccSetPeopleInfo(c.userName || 'User', (photoEl && photoEl.style.display !== 'none') ? photoEl.src : null);
+        document.getElementById('cc-incoming-overlay').style.display = 'flex';
+        startRing();
+      }
+      return;
+    }
+    if (callStatus === 'active') {
+      if (ccJoinedFor !== chatId) {
+        ccChatId = chatId;
+        ccJoinAgora(chatId);
+      }
+      return;
+    }
+    // callStatus is 'none' or 'ended'
+    if (ccJoinedFor === chatId || ccShowingIncomingFor === chatId || ccShowingOutgoingFor === chatId) {
+      ccLocalCleanup();
+    }
   }
 
   // ---- Incoming request listener ----
