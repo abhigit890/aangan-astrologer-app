@@ -970,7 +970,8 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
-    getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut
+    getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
+    setPersistence, browserSessionPersistence
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
   import {
     getFirestore, doc, setDoc, updateDoc, serverTimestamp, getDoc, addDoc,
@@ -989,6 +990,14 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
+  // Kinnar Talk's User App, Astrologer App and Admin Panel are all hosted
+  // under the same GitHub Pages origin (different paths only), so by default
+  // they'd share one browser-wide Firebase Auth session — logging out of any
+  // one of them would sign the others out too, since Firebase Auth
+  // broadcasts sign-in/sign-out across every tab of the same origin. Session
+  // persistence scopes each tab's login to that tab alone, so this app's
+  // login/logout never affects the other two apps' tabs.
+  setPersistence(auth, browserSessionPersistence).catch(() => {});
 
   const loginCard = document.getElementById('login-card');
   const dashboard = document.getElementById('dashboard');
@@ -4303,124 +4312,146 @@
           return ta-tb;
         });
 
+      // Each numbered section below is independent and wrapped in its own
+      // try/catch. Previously a single failure (e.g. trying to read a
+      // chats/{id} doc that doesn't exist for a call-type request — Firestore
+      // denies that read as "Missing or insufficient permissions" instead of
+      // "not found") would throw out of this whole async callback and skip
+      // every section after it — including section 3, which is what makes
+      // the incoming-request ring actually appear. That is why the ring
+      // stopped showing: the request was created fine (visible in the Orders
+      // badge, which has its own separate listener) but this function was
+      // silently aborting before it reached the ring code.
+
       // 1) User rejected the chat from the incoming window.
       // End the chat immediately and put a green "Chat Cancelled" message
       // into the astrologer's currently open chat screen.
-      for(const d of snap.docs){
-        const r=d.data()||{};
-        if(r.queueStatus!=='user_declined') continue;
-        const cRef=doc(db,'chats',d.id);
-        const cSnap=await getDoc(cRef);
-        if(!cSnap.exists()) continue;
-        const c=cSnap.data()||{};
-        if(c.cancelledNoticeShown===true) continue;
+      try {
+        for(const d of snap.docs){
+          const r=d.data()||{};
+          if(r.queueStatus!=='user_declined') continue;
+          if(r.type==='call'||r.type==='video') continue; // no chats doc exists for calls — handled in 1b
+          const cRef=doc(db,'chats',d.id);
+          const cSnap=await getDoc(cRef);
+          if(!cSnap.exists()) continue;
+          const c=cSnap.data()||{};
+          if(c.cancelledNoticeShown===true) continue;
 
-        await updateDoc(cRef,{
-          status:'ended',
-          endReason:'user_cancelled',
-          endedByType:'user',
-          endedByName:r.userName||c.userName||'User',
-          endedAt:serverTimestamp(),
-          cancelledNoticeShown:true
-        });
-
-        const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_cancelled'),limit(1)));
-        if(ms.empty){
-          await addDoc(collection(db,'chats',d.id,'messages'),{
-            text:'Chat Cancelled',
-            senderType:'system',
-            systemEvent:'chat_cancelled',
-            sentAt:serverTimestamp()
+          await updateDoc(cRef,{
+            status:'ended',
+            endReason:'user_cancelled',
+            endedByType:'user',
+            endedByName:r.userName||c.userName||'User',
+            endedAt:serverTimestamp(),
+            cancelledNoticeShown:true
           });
-        }
 
-        if(window.currentChatId===d.id){
-          // Release the astrologer but deliberately keep this chat screen open
-          // so the cancellation is visible. Next request rings after 5 sec.
-          await updateDoc(doc(db,'astrologers',uid),{isBusy:false}).catch(()=>{});
-          window.currentChatId=null;
-          window.currentChatUserName=null;
-          lastIncomingRequestId=null;
-          scheduleNextWaitingRequest(5000);
+          const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_cancelled'),limit(1)));
+          if(ms.empty){
+            await addDoc(collection(db,'chats',d.id,'messages'),{
+              text:'Chat Cancelled',
+              senderType:'system',
+              systemEvent:'chat_cancelled',
+              sentAt:serverTimestamp()
+            });
+          }
+
+          if(window.currentChatId===d.id){
+            // Release the astrologer but deliberately keep this chat screen open
+            // so the cancellation is visible. Next request rings after 5 sec.
+            await updateDoc(doc(db,'astrologers',uid),{isBusy:false}).catch(()=>{});
+            window.currentChatId=null;
+            window.currentChatUserName=null;
+            lastIncomingRequestId=null;
+            scheduleNextWaitingRequest(5000);
+          }
         }
-      }
+      } catch(e) { console.error('Request listener section 1 error:', e); }
 
       // 1b) User cancelled a call/video request after this astrologer had already
       // accepted it (while the astrologer was on the "waiting for user to join" screen).
       // There's no `chats` doc for calls, so this is handled separately — just tag the
       // request as missed-by-user (for history) and, if it's the call we're currently
       // waiting on, back out of the waiting screen.
-      if (!window.__handledUserCancelledCalls) window.__handledUserCancelledCalls = new Set();
-      for (const d of snap.docs) {
-        const r = d.data() || {};
-        if (r.queueStatus !== 'user_declined' || r.type === 'chat') continue;
-        if (window.__handledUserCancelledCalls.has(d.id)) continue;
-        window.__handledUserCancelledCalls.add(d.id);
-        await updateDoc(doc(db, 'requests', d.id), { missedBy: 'user' }).catch(()=>{});
-        if (activeCallOrderId === d.id) {
-          activeCallOrderId = null;
-          showScreen('dashboard');
-          scheduleNextWaitingRequest(5000);
+      try {
+        if (!window.__handledUserCancelledCalls) window.__handledUserCancelledCalls = new Set();
+        for (const d of snap.docs) {
+          const r = d.data() || {};
+          if (r.queueStatus !== 'user_declined' || r.type === 'chat') continue;
+          if (window.__handledUserCancelledCalls.has(d.id)) continue;
+          window.__handledUserCancelledCalls.add(d.id);
+          await updateDoc(doc(db, 'requests', d.id), { missedBy: 'user' }).catch(()=>{});
+          if (activeCallOrderId === d.id) {
+            activeCallOrderId = null;
+            showScreen('dashboard');
+            scheduleNextWaitingRequest(5000);
+          }
         }
-      }
+      } catch(e) { console.error('Request listener section 1b error:', e); }
 
       // 2) If an incoming request disappeared/rejected/timed out, stop its ring.
-      if(currentRequestId){
-        const stillWaiting=waitingChats.some(x=>x.id===currentRequestId);
-        if(!stillWaiting){
-          stopRing();
-          stopReqCountdown();
-          document.getElementById('incoming-overlay').style.display='none';
-          currentRequestId=null;
-          currentRequestData=null;
-          lastIncomingRequestId=null;
+      try {
+        if(currentRequestId){
+          const stillWaiting=waitingChats.some(x=>x.id===currentRequestId);
+          if(!stillWaiting){
+            stopRing();
+            stopReqCountdown();
+            document.getElementById('incoming-overlay').style.display='none';
+            currentRequestId=null;
+            currentRequestData=null;
+            lastIncomingRequestId=null;
+          }
         }
-      }
+      } catch(e) { console.error('Request listener section 2 error:', e); }
 
       // 3) New waiting request: ring immediately if astrologer is free.
-      if(!window.currentChatId && !currentRequestId && !activeCallOrderId && waitingChats.length && Date.now()>=nextRequestReadyAt){
-        await showNextWaitingRequest();
-      }
+      try {
+        if(!window.currentChatId && !currentRequestId && !activeCallOrderId && waitingChats.length && Date.now()>=nextRequestReadyAt){
+          await showNextWaitingRequest();
+        }
+      } catch(e) { console.error('Request listener section 3 error:', e); }
 
       // 4) User accepted. Convert waiting chat into active chat, or join an accepted call.
-      if (!window.__handledAcceptedRequests) window.__handledAcceptedRequests = new Set();
-      for(const d of snap.docs){
-        const data=d.data()||{};
-        if(data.queueStatus!=='user_accepted') continue;
-        if(window.__handledAcceptedRequests.has(d.id)) continue; // already handled this session, avoid re-processing
-        window.__handledAcceptedRequests.add(d.id);
+      try {
+        if (!window.__handledAcceptedRequests) window.__handledAcceptedRequests = new Set();
+        for(const d of snap.docs){
+          const data=d.data()||{};
+          if(data.queueStatus!=='user_accepted') continue;
+          if(window.__handledAcceptedRequests.has(d.id)) continue; // already handled this session, avoid re-processing
+          window.__handledAcceptedRequests.add(d.id);
 
-        if (data.type !== 'chat') {
-          // Call: the user just accepted our ring — join the call now.
-          window.isGeneralCall = true;
-          window.currentGeneralCallUserId = data.userId || null;
-          window.currentGeneralCallUserName = data.userName || 'User';
-          window.currentGeneralCallType = data.type;
-          window.currentGeneralCallSelfDetails = data.selfDetails || null;
-          startRemedyCall(d.id, data.type === 'video');
-          continue;
-        }
+          if (data.type !== 'chat') {
+            // Call: the user just accepted our ring — join the call now.
+            window.isGeneralCall = true;
+            window.currentGeneralCallUserId = data.userId || null;
+            window.currentGeneralCallUserName = data.userName || 'User';
+            window.currentGeneralCallType = data.type;
+            window.currentGeneralCallSelfDetails = data.selfDetails || null;
+            startRemedyCall(d.id, data.type === 'video');
+            continue;
+          }
 
-        const cRef=doc(db,'chats',d.id);
-        const cSnap=await getDoc(cRef);
-        if(!cSnap.exists()) continue;
-        const c=cSnap.data()||{};
-        if(c.status==='ended'){
-          // This chat already finished in a previous session — never revive it.
+          const cRef=doc(db,'chats',d.id);
+          const cSnap=await getDoc(cRef);
+          if(!cSnap.exists()) continue;
+          const c=cSnap.data()||{};
+          if(c.status==='ended'){
+            // This chat already finished in a previous session — never revive it.
+            await updateDoc(doc(db,'requests',d.id),{queueStatus:'completed'}).catch(()=>{});
+            continue;
+          }
+          if(c.status!=='active') await updateDoc(cRef,{status:'active',requestUserAccepted:true,startedAt:c.startedAt||serverTimestamp()});
+          if (!window.__startedChatsSent) window.__startedChatsSent = new Set();
+          if (!window.__startedChatsSent.has(d.id)) {
+            window.__startedChatsSent.add(d.id);
+            const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_started'),limit(1)));
+            if(ms.empty) await addDoc(collection(db,'chats',d.id,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
+          }
           await updateDoc(doc(db,'requests',d.id),{queueStatus:'completed'}).catch(()=>{});
-          continue;
+          // Don't force-navigate the astrologer's screen — just update the data.
+          // They'll see it via the Ongoing Chat bar / Orders tab and can open it themselves.
         }
-        if(c.status!=='active') await updateDoc(cRef,{status:'active',requestUserAccepted:true,startedAt:c.startedAt||serverTimestamp()});
-        if (!window.__startedChatsSent) window.__startedChatsSent = new Set();
-        if (!window.__startedChatsSent.has(d.id)) {
-          window.__startedChatsSent.add(d.id);
-          const ms=await getDocs(query(collection(db,'chats',d.id,'messages'),where('systemEvent','==','chat_started'),limit(1)));
-          if(ms.empty) await addDoc(collection(db,'chats',d.id,'messages'),{text:'This chat has been started.',senderType:'system',systemEvent:'chat_started',sentAt:serverTimestamp()});
-        }
-        await updateDoc(doc(db,'requests',d.id),{queueStatus:'completed'}).catch(()=>{});
-        // Don't force-navigate the astrologer's screen — just update the data.
-        // They'll see it via the Ongoing Chat bar / Orders tab and can open it themselves.
-      }
+      } catch(e) { console.error('Request listener section 4 error:', e); }
     },(err)=>console.error('Chat request listener error:',err));
   }
 
