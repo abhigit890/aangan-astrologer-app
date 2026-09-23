@@ -199,6 +199,24 @@
   }
   @keyframes tRecPulse{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:0.35; transform:scale(0.8); } }
 
+  /* WhatsApp-style hold-to-record voice note (chat thread only) */
+  .thread-input-bar{ position:relative; }
+  .voice-rec-pill{
+    display:none; flex:1; align-items:center; gap:8px; padding:6px 12px; min-width:0;
+    border-radius:24px; border:1px solid var(--line); background:rgba(255,255,255,0.55);
+  }
+  .voice-rec-pill.show{ display:flex; }
+  .voice-rec-dot{ width:9px; height:9px; border-radius:50%; background:#D64C6B; animation:tRecPulse 1s ease-in-out infinite; flex-shrink:0; }
+  .voice-rec-timer{ font-size:13.5px; font-weight:700; color:var(--ink); flex-shrink:0; font-variant-numeric:tabular-nums; }
+  .voice-rec-hint{ flex:1; min-width:0; display:flex; align-items:center; justify-content:flex-end; gap:4px; font-size:12px; color:var(--ink-faint); white-space:nowrap; overflow:hidden; }
+  .voice-delete-zone{
+    position:absolute; right:14px; top:50%; transform:translateY(-50%);
+    width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    color:#D64C6B; opacity:0; pointer-events:none;
+  }
+  .round-btn.voice-btn{ transition:background .15s ease, box-shadow .15s ease; touch-action:none; user-select:none; -webkit-user-select:none; position:relative; z-index:1; }
+  .round-btn.voice-btn.recording{ background:#D64C6B; color:#fff; box-shadow:0 0 0 6px rgba(214,76,107,0.16); }
+
   /* chat thread toolbar */
   .thread-toolbar{
     display:flex; justify-content:space-around;
@@ -597,14 +615,27 @@
   </div>
   <div class="thread-body" id="thread-body"></div>
   <div class="thread-bottom-wrap">
-    <div class="thread-input-bar">
-      <div class="thread-input-pill">
+    <div class="thread-input-bar" id="tt-input-bar">
+      <div class="thread-input-pill" id="tt-input-pill">
         <span id="tt-qr-btn">⚡</span>
         <span id="tt-photo-btn">🖼️</span>
         <input type="text" id="thread-input" placeholder="Type a message...">
       </div>
+      <div class="voice-rec-pill" id="tt-voice-rec-pill">
+        <span class="voice-rec-dot"></span>
+        <span class="voice-rec-timer" id="tt-voice-timer">0:00</span>
+        <span class="voice-rec-hint">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Slide to cancel
+        </span>
+      </div>
       <input type="file" id="thread-photo-input" accept="image/*" style="display:none;">
-      <button class="round-btn" id="tt-voice-btn">🎤</button>
+      <div class="voice-delete-zone" id="tt-voice-delete-zone">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </div>
+      <button class="round-btn voice-btn" id="tt-voice-btn">
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      </button>
       <button class="round-btn" id="thread-send">➤</button>
     </div>
     <div class="thread-toolbar">
@@ -2133,40 +2164,99 @@
   document.getElementById('tt-photo-btn').addEventListener('click', () => document.getElementById('thread-photo-input').click());
   document.getElementById('thread-photo-input').addEventListener('change', (e) => { compressAndSendPhoto(e.target.files[0]); e.target.value = ''; });
 
-  // ---- Voice message ----
-  let mediaRecorder = null;
-  let recordedChunks = [];
+  // ---- Voice message — WhatsApp-style: hold the mic button to record, release
+  // to send, or slide your finger left off the button to cancel and discard it. ----
+  function setupHoldToRecordMic(opts) {
+    const micBtn = document.getElementById(opts.micBtnId);
+    const pillEl = document.getElementById(opts.pillId);
+    const recPillEl = document.getElementById(opts.recPillId);
+    const timerEl = document.getElementById(opts.timerId);
+    const sendBtn = document.getElementById(opts.sendBtnId);
+    const deleteZoneEl = document.getElementById(opts.deleteZoneId);
+    const CANCEL_PX = 90;
 
-  document.getElementById('tt-voice-btn').addEventListener('click', async () => {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
-      document.getElementById('tt-voice-btn').textContent = '🎤';
-      return;
+    let mediaRecorder = null, recordedChunks = [], stream = null;
+    let recording = false, cancelled = false, startX = 0, startedAt = 0, timerInt = null;
+
+    function fmt(ms) {
+      const s = Math.floor(ms / 1000), m = Math.floor(s / 60), ss = s % 60;
+      return m + ':' + (ss < 10 ? '0' : '') + ss;
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
+
+    async function begin() {
+      if (recording) return;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        alert('Microphone access is needed to send a voice message.');
+        return;
+      }
+      recording = true; cancelled = false;
       recordedChunks = [];
+      mediaRecorder = new MediaRecorder(stream);
       mediaRecorder.ondataavailable = (e) => recordedChunks.push(e.data);
-      mediaRecorder.onstop = async () => {
+      mediaRecorder.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
+        if (cancelled || !recordedChunks.length) return;
         const blob = new Blob(recordedChunks, { type: 'audio/webm' });
         const reader = new FileReader();
-        reader.onload = async () => {
-          if (!window.currentChatId) return;
-          await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
-            senderType: 'astrologer', voiceNote: reader.result, sentAt: serverTimestamp()
-          });
-          await setDoc(doc(db, 'chats', window.currentChatId), {
-            lastMessage: '🎤 Voice message', lastMessageAt: serverTimestamp()
-          }, { merge: true });
-        };
+        reader.onload = () => opts.onSend(reader.result);
         reader.readAsDataURL(blob);
       };
       mediaRecorder.start();
-      document.getElementById('tt-voice-btn').textContent = '⏹️';
-    } catch (e) {
-      alert('Microphone access is needed to send a voice message.');
+      startedAt = Date.now();
+      pillEl.style.display = 'none';
+      sendBtn.style.display = 'none';
+      recPillEl.classList.add('show');
+      micBtn.classList.add('recording');
+      timerEl.textContent = '0:00';
+      timerInt = setInterval(() => { timerEl.textContent = fmt(Date.now() - startedAt); }, 200);
+    }
+
+    function finish(didCancel) {
+      if (!recording) return;
+      recording = false;
+      cancelled = didCancel;
+      clearInterval(timerInt);
+      micBtn.classList.remove('recording');
+      micBtn.style.transform = '';
+      deleteZoneEl.style.opacity = '0';
+      pillEl.style.display = '';
+      sendBtn.style.display = '';
+      recPillEl.classList.remove('show');
+      if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+    }
+
+    micBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      startX = e.clientX;
+      try { micBtn.setPointerCapture(e.pointerId); } catch (err) {}
+      begin();
+    });
+    micBtn.addEventListener('pointermove', (e) => {
+      if (!recording) return;
+      const dx = e.clientX - startX;
+      if (dx >= 0) { micBtn.style.transform = ''; deleteZoneEl.style.opacity = '0'; return; }
+      const dist = Math.min(Math.abs(dx), CANCEL_PX + 20);
+      micBtn.style.transform = `translateX(${-dist}px)`;
+      deleteZoneEl.style.opacity = String(Math.min(1, dist / CANCEL_PX));
+      if (Math.abs(dx) > CANCEL_PX) finish(true);
+    });
+    micBtn.addEventListener('pointerup', () => finish(false));
+    micBtn.addEventListener('pointercancel', () => finish(true));
+  }
+
+  setupHoldToRecordMic({
+    micBtnId: 'tt-voice-btn', pillId: 'tt-input-pill', recPillId: 'tt-voice-rec-pill',
+    timerId: 'tt-voice-timer', sendBtnId: 'thread-send', deleteZoneId: 'tt-voice-delete-zone',
+    onSend: async (dataUrl) => {
+      if (!window.currentChatId) return;
+      await addDoc(collection(db, 'chats', window.currentChatId, 'messages'), {
+        senderType: 'astrologer', voiceNote: dataUrl, sentAt: serverTimestamp()
+      });
+      await setDoc(doc(db, 'chats', window.currentChatId), {
+        lastMessage: '🎤 Voice message', lastMessageAt: serverTimestamp()
+      }, { merge: true });
     }
   });
 
