@@ -230,6 +230,26 @@
 .orders-wait-card .ow-avatar{width:42px;height:42px;border-radius:50%;background:rgba(217,169,79,.16);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0}
 .orders-wait-card .ow-info{flex:1;min-width:0}.orders-wait-card .ow-name{font-weight:700;font-size:14px}.orders-wait-card .ow-meta{color:var(--dim);font-size:11.5px;margin-top:3px}.orders-wait-card .ow-actions{display:flex;gap:6px}
 .orders-wait-card .ow-actions button{padding:8px 10px;border-radius:10px;border:1px solid var(--gold);background:var(--gold);color:#2E1D0C;font-size:11px;font-weight:700;cursor:pointer}.orders-wait-card .ow-actions button.reject{background:transparent;color:var(--rose);border-color:var(--rose)}
+.wal-tile{padding:14px;border-radius:14px;border:2px solid transparent;background:linear-gradient(160deg,var(--card-hi),var(--card)) padding-box,var(--metal) border-box;box-shadow:0 6px 18px rgba(120,90,20,.12),inset 0 1px 0 rgba(255,255,255,.45)}
+.wal-tile-label{font-size:11.5px;color:var(--ink-faint);font-weight:600}
+.wal-tile-value{font-size:18px;font-weight:700;color:var(--gold-text);margin-top:4px}
+.wal-tile-value.good{color:var(--green)}
+.wal-card{padding:14px 16px;border-radius:14px;border:2px solid transparent;background:linear-gradient(160deg,var(--card-hi),var(--card)) padding-box,var(--metal) border-box;box-shadow:0 6px 18px rgba(120,90,20,.12),inset 0 1px 0 rgba(255,255,255,.45)}
+.wal-chev-r{align-self:center;color:var(--gold-text);font-size:18px}
+.wal-period{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);color:var(--gold-text);font-weight:700;font-size:14px;cursor:pointer}
+.wal-period .wal-chevron{transition:transform .15s ease;color:var(--ink-faint)}
+.wal-period.open .wal-chevron{transform:rotate(180deg)}
+.wal-period-list{margin-top:6px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);overflow:hidden;max-height:260px;overflow-y:auto}
+.wal-period-list .wpl-item{padding:12px 16px;font-size:13.5px;color:var(--ink-dim);border-bottom:1px solid var(--line);cursor:pointer}
+.wal-period-list .wpl-item:last-child{border-bottom:none}
+.wal-period-list .wpl-item.active{color:var(--gold-text);font-weight:700;background:rgba(217,169,79,.10)}
+.wal-tx-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.wal-tx-avatar{width:38px;height:38px;border-radius:50%;background:rgba(217,169,79,.16);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;font-size:16px}
+.wal-tx-avatar img{width:100%;height:100%;object-fit:cover}
+.wal-tx-info{flex:1;min-width:0}
+.wal-tx-name{font-weight:700;font-size:13.5px}
+.wal-tx-meta{color:var(--ink-faint);font-size:11px;margin-top:2px}
+.wal-tx-amt{font-weight:700;font-size:14px;color:var(--green);flex-shrink:0}
 .uk-tabs{
     display:flex; gap:8px; padding:14px 14px 10px; overflow-x:auto;
   }
@@ -549,7 +569,7 @@
     <div class="nav-item active" id="nav-home"><div class="icon">🏠</div><div>Home</div></div>
     <div class="nav-item" id="nav-orders"><div class="icon">📦</div><div class="count" id="orders-count" style="display:none;">0</div><div>Orders</div></div>
     <div class="nav-item"><div class="icon">🔴</div><div>Live</div></div>
-    <div class="nav-item"><div class="icon">👛</div><div>Wallet</div></div>
+    <div class="nav-item" id="nav-wallet"><div class="icon">👛</div><div>Wallet</div></div>
     <div class="nav-item" id="nav-account"><div class="icon">👤</div><div>Account</div></div>
   </div>
 </div>
@@ -684,6 +704,63 @@
     <span class="title">Remedy Bookings</span>
   </div>
   <div id="bookings-list" style="padding:70px 18px 18px;"></div>
+</div>
+
+<!-- WALLET -->
+<div class="sub-screen" id="screen-wallet">
+  <div class="sub-header">
+    <span class="back" data-back="dashboard">←</span>
+    <span class="title">Wallet</span>
+  </div>
+  <div style="padding:70px 16px 40px;">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+      <div class="wal-tile">
+        <div class="wal-tile-label">Last 3 Months Earnings</div>
+        <div class="wal-tile-value" id="wal-3m">₹0</div>
+      </div>
+      <div class="wal-tile">
+        <div class="wal-tile-label">Monthly Earnings</div>
+        <div class="wal-tile-value" id="wal-month">₹0</div>
+      </div>
+    </div>
+
+    <div class="wal-period" id="wal-period-toggle">
+      <span id="wal-period-label">Today</span>
+      <span class="wal-chevron">▾</span>
+    </div>
+    <div class="wal-period-list" id="wal-period-list" style="display:none;"></div>
+
+    <div class="wal-card" style="margin-top:14px;">
+      <div style="display:flex; justify-content:space-between; gap:10px;">
+        <div style="flex:1;">
+          <div class="wal-tile-label">Available Balance</div>
+          <div class="wal-tile-value good" id="wal-available">₹0</div>
+        </div>
+        <div style="flex:1;">
+          <div class="wal-tile-label">Payable Amount</div>
+          <div class="wal-tile-value good" id="wal-payable">₹0</div>
+        </div>
+        <span class="wal-chev-r">›</span>
+      </div>
+    </div>
+
+    <div class="wal-card" style="margin-top:12px;">
+      <div class="wal-tile-label" style="margin-bottom:8px;">Today's Remedy Bookings</div>
+      <div style="display:flex; justify-content:space-between; gap:10px;">
+        <div style="flex:1;">
+          <div class="wal-tile-label">Earnings</div>
+          <div class="wal-tile-value good" id="wal-remedy-earn">₹0</div>
+        </div>
+        <div style="flex:1;">
+          <div class="wal-tile-label">Pending Earnings</div>
+          <div class="wal-tile-value good" id="wal-remedy-pending">₹0</div>
+        </div>
+        <span class="wal-chev-r">›</span>
+      </div>
+    </div>
+
+    <div id="wal-transactions" style="margin-top:22px;"></div>
+  </div>
 </div>
 
 <!-- VIDEO CALL -->
@@ -1343,6 +1420,7 @@
         }
         updateOngoingChatBar();
         if (chatBillingChatId === chatId) stopChatBilling();
+        finalizeChatEarnings(chatId, c);
       }
       if (active) startChatBilling(chatId);
       document.getElementById('thread-input').disabled = !active;
@@ -1536,7 +1614,7 @@
       const chatSnap = await getDoc(doc(db, 'chats', chatId));
       if (!chatSnap.exists()) { stopChatBilling(); return; }
       const c = chatSnap.data();
-      if (c.status !== 'active') { stopChatBilling(); return; } // ended/not started elsewhere — nothing to meter
+      if (c.status !== 'active') { stopChatBilling(); finalizeChatEarnings(chatId, c); return; } // ended/not started elsewhere — settle earnings, nothing more to meter
       const userId = c.userId;
       if (!userId) return;
       const astroSnap = await getDoc(doc(db, 'astrologers', window.currentUid));
@@ -1555,14 +1633,54 @@
 
       if (balance >= costForElapsed) {
         await updateDoc(doc(db, 'users', userId), { balance: increment(-costForElapsed) });
-        await updateDoc(doc(db, 'chats', chatId), { lastBilledAt: serverTimestamp() });
+        // Track the running total billed for this chat — settled into the astrologer's
+        // Wallet (astroEarnings ledger + astrologers/{uid}.walletBalance) once the chat
+        // ends, by finalizeChatEarnings() below.
+        await updateDoc(doc(db, 'chats', chatId), { lastBilledAt: serverTimestamp(), astroBilledAmount: increment(costForElapsed) });
       } else {
         // Balance runs out partway through this tick — charge only what's left, then end everything.
-        if (balance > 0) await updateDoc(doc(db, 'users', userId), { balance: 0 });
+        if (balance > 0) {
+          await updateDoc(doc(db, 'users', userId), { balance: 0 });
+          await updateDoc(doc(db, 'chats', chatId), { astroBilledAmount: increment(balance) });
+        }
         stopChatBilling();
         await endChatForInsufficientBalance(chatId, c);
       }
     } catch (e) { console.error('billChatTick error', e); }
+  }
+
+  // Settles the Wallet earnings for one chat session, once — reads how much was
+  // actually billed for this chat (astroBilledAmount, built up tick-by-tick above)
+  // and turns it into one ledger entry plus a credit to the astrologer's running
+  // wallet balance. Called both from here (billChatTick notices the chat ended)
+  // and from openChatThread's status listener (covers the case where the chat
+  // ends while this astrologer isn't currently looking at that thread) — the
+  // in-memory set plus the astroEarningsFinalized flag on the chat doc make it
+  // safe to call from both places without double-crediting.
+  if (!window.__earningsFinalizing) window.__earningsFinalizing = new Set();
+  async function finalizeChatEarnings(chatId, c) {
+    if (window.__earningsFinalizing.has(chatId)) return;
+    window.__earningsFinalizing.add(chatId);
+    try {
+      if (!c) {
+        const snap = await getDoc(doc(db, 'chats', chatId));
+        if (!snap.exists()) return;
+        c = snap.data();
+      }
+      if (c.astroEarningsFinalized) return;
+      const amount = Math.round((parseFloat(c.astroBilledAmount || 0) || 0) * 100) / 100;
+      await updateDoc(doc(db, 'chats', chatId), { astroEarningsFinalized: true });
+      if (amount <= 0) return;
+      await addDoc(collection(db, 'astroEarnings'), {
+        astrologerId: window.currentUid,
+        chatId,
+        userId: c.userId || null,
+        userName: c.userName || 'User',
+        amount,
+        createdAt: serverTimestamp()
+      });
+      await updateDoc(doc(db, 'astrologers', window.currentUid), { walletBalance: increment(amount) });
+    } catch (e) { console.error('finalizeChatEarnings error', e); }
   }
 
   async function endChatForInsufficientBalance(chatId, c) {
@@ -2114,6 +2232,183 @@
     document.getElementById('nav-account').classList.add('active');
     openAccountScreen();
   });
+
+  document.getElementById('nav-wallet').addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('nav-wallet').classList.add('active');
+    openWalletScreen();
+  });
+
+  // ================= WALLET =================
+  let walEarningsUnsub = null;
+  let walAllEarnings = [];      // every astroEarnings doc for this astrologer (client-side filtered by period below)
+  let walSelectedPeriodKey = 'today';
+  let walUserProfileCache = {};
+
+  function walMonthKey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+  function walMonthLabel(d) { return d.toLocaleDateString('en-IN', { month: 'long' }) + '-' + d.getFullYear(); }
+  function walIsSameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+
+  function walBuildPeriodOptions() {
+    const now = new Date();
+    const opts = [{ key: 'today', label: 'Today' }, { key: 'yesterday', label: 'Yesterday' }];
+    // Current calendar month, then the 11 before it.
+    const cursor = new Date(now.getFullYear(), now.getMonth(), 1);
+    for (let i = 0; i < 12; i++) {
+      opts.push({ key: walMonthKey(cursor), label: walMonthLabel(cursor) });
+      cursor.setMonth(cursor.getMonth() - 1);
+    }
+    return opts;
+  }
+
+  function walEntriesForPeriod(key) {
+    const now = new Date();
+    return walAllEarnings.filter(e => {
+      const t = e.createdAt && e.createdAt.toDate ? e.createdAt.toDate() : null;
+      if (!t) return false;
+      if (key === 'today') return walIsSameDay(t, now);
+      if (key === 'yesterday') { const y = new Date(now); y.setDate(now.getDate() - 1); return walIsSameDay(t, y); }
+      return walMonthKey(t) === key; // 'YYYY-M' month key
+    });
+  }
+
+  function walSum(entries) { return entries.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0); }
+
+  function walFmt(n) {
+    const v = Math.round((n || 0) * 100) / 100;
+    return '₹' + (Number.isInteger(v) ? v : v.toFixed(2));
+  }
+
+  async function openWalletScreen() {
+    showScreen('screen-wallet');
+    const uid = window.currentUid;
+    if (!uid) return;
+
+    document.getElementById('wal-period-label').textContent = 'Today';
+    walSelectedPeriodKey = 'today';
+    document.getElementById('wal-period-list').style.display = 'none';
+    document.getElementById('wal-period-toggle').classList.remove('open');
+
+    // Available Balance / Payable Amount come straight from the astrologer's own
+    // running wallet total (credited session-by-session as chats end) — not tied
+    // to whichever period is selected in the dropdown below.
+    try {
+      const aSnap = await getDoc(doc(db, 'astrologers', uid));
+      const bal = aSnap.exists() ? (parseFloat(aSnap.data().walletBalance || 0) || 0) : 0;
+      document.getElementById('wal-available').textContent = walFmt(bal);
+      document.getElementById('wal-payable').textContent = walFmt(bal);
+    } catch (e) { /* leave at ₹0 */ }
+
+    walRefreshRemedyCard(uid);
+
+    if (walEarningsUnsub) { walEarningsUnsub(); walEarningsUnsub = null; }
+    walEarningsUnsub = onSnapshot(
+      query(collection(db, 'astroEarnings'), where('astrologerId', '==', uid)),
+      (snap) => {
+        walAllEarnings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        walRenderStats();
+        walRenderPeriodList();
+        walRenderTransactions();
+      },
+      (err) => { console.error('Wallet earnings listener error:', err); }
+    );
+  }
+
+  async function walRefreshRemedyCard(uid) {
+    try {
+      const now = new Date();
+      const snap = await getDocs(query(collection(db, 'remedyOrders'), where('assignedAstrologerId', '==', uid)));
+      let todayEarn = 0, pending = 0;
+      snap.forEach(d => {
+        const o = d.data() || {};
+        const t = o.createdAt && o.createdAt.toDate ? o.createdAt.toDate() : null;
+        const price = parseFloat(String(o.remedyPrice || '0').replace(/[^0-9.]/g, '')) || 0;
+        if (!price) return;
+        const isToday = t && walIsSameDay(t, now);
+        if (o.callStatus === 'completed') { if (isToday) todayEarn += price; }
+        else { pending += price; } // pending regardless of day — it hasn't been earned yet
+      });
+      document.getElementById('wal-remedy-earn').textContent = walFmt(todayEarn);
+      document.getElementById('wal-remedy-pending').textContent = walFmt(pending);
+    } catch (e) { /* leave at ₹0 */ }
+  }
+
+  function walRenderStats() {
+    const now = new Date();
+    const threeMonthsAgo = new Date(now); threeMonthsAgo.setMonth(now.getMonth() - 3);
+    const monthEntries = walAllEarnings.filter(e => {
+      const t = e.createdAt && e.createdAt.toDate ? e.createdAt.toDate() : null;
+      return t && walMonthKey(t) === walMonthKey(now);
+    });
+    const threeMoEntries = walAllEarnings.filter(e => {
+      const t = e.createdAt && e.createdAt.toDate ? e.createdAt.toDate() : null;
+      return t && t >= threeMonthsAgo;
+    });
+    document.getElementById('wal-3m').textContent = walFmt(walSum(threeMoEntries));
+    document.getElementById('wal-month').textContent = walFmt(walSum(monthEntries));
+  }
+
+  function walRenderPeriodList() {
+    const listEl = document.getElementById('wal-period-list');
+    const opts = walBuildPeriodOptions();
+    listEl.innerHTML = opts.map(o => `<div class="wpl-item${o.key === walSelectedPeriodKey ? ' active' : ''}" data-key="${o.key}" data-label="${o.label}">${o.label}</div>`).join('');
+    listEl.querySelectorAll('.wpl-item').forEach(item => {
+      item.addEventListener('click', () => {
+        walSelectedPeriodKey = item.dataset.key;
+        document.getElementById('wal-period-label').textContent = item.dataset.label;
+        listEl.style.display = 'none';
+        document.getElementById('wal-period-toggle').classList.remove('open');
+        walRenderPeriodList();
+        walRenderTransactions();
+      });
+    });
+  }
+
+  document.getElementById('wal-period-toggle').addEventListener('click', () => {
+    const listEl = document.getElementById('wal-period-list');
+    const open = listEl.style.display !== 'none';
+    listEl.style.display = open ? 'none' : 'block';
+    document.getElementById('wal-period-toggle').classList.toggle('open', !open);
+  });
+
+  async function walRenderTransactions() {
+    const wrap = document.getElementById('wal-transactions');
+    const entries = walEntriesForPeriod(walSelectedPeriodKey).sort((a, b) => {
+      const ta = a.createdAt && a.createdAt.toDate ? a.createdAt.toDate().getTime() : 0;
+      const tb = b.createdAt && b.createdAt.toDate ? b.createdAt.toDate().getTime() : 0;
+      return tb - ta;
+    });
+    if (!entries.length) {
+      wrap.innerHTML = '<div class="empty-state">No Transactions Available</div>';
+      return;
+    }
+    // Look up each user's photo (cached) so a transaction row can show who the session was with.
+    const rows = await Promise.all(entries.map(async (e) => {
+      let photo = '';
+      if (e.userId) {
+        if (!(e.userId in walUserProfileCache)) {
+          try {
+            const uSnap = await getDoc(doc(db, 'users', e.userId));
+            walUserProfileCache[e.userId] = uSnap.exists() ? (uSnap.data().photoURL || '') : '';
+          } catch (err) { walUserProfileCache[e.userId] = ''; }
+        }
+        photo = walUserProfileCache[e.userId] || '';
+      }
+      const t = e.createdAt && e.createdAt.toDate ? e.createdAt.toDate() : null;
+      const timeLabel = t ? t.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+      return `
+        <div class="wal-tx-row">
+          <div class="wal-tx-avatar">${photo ? `<img src="${photo}">` : '🧑'}</div>
+          <div class="wal-tx-info">
+            <div class="wal-tx-name">${e.userName || 'User'}</div>
+            <div class="wal-tx-meta">Chat earning · ${timeLabel}</div>
+          </div>
+          <div class="wal-tx-amt">+${walFmt(e.amount)}</div>
+        </div>
+      `;
+    }));
+    wrap.innerHTML = rows.join('');
+  }
 
   let acctPhotoSlots = [null, null, null, null, null]; // base64 strings or null
 
