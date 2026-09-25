@@ -1,12 +1,15 @@
 {
+  "id": "/aangan-astrologer-app/",
   "name": "Kinnar Talk Astrologer",
   "short_name": "KT Astro",
+  "description": "Manage chats, calls, live sessions, remedy bookings and earnings as a Kinnar Talk astrologer.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0C0904",
   "theme_color": "#D9A94F",
+  "categories": ["business", "lifestyle"],
   "icons": [
     {
       "src": "astro-icon-192.png",
